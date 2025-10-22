@@ -1,0 +1,22 @@
+cat > templates/form.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Форма</title></head>
+<body>
+  <h2>Форма бурильщика</h2>
+  {% if message %}<div style="color:green">{{ message }}</div>{% endif %}
+  <form method="post" action="/submit">
+    <label>Дата и время <input type="datetime-local" name="date_time" value="{{ now }}"></label><br>
+    <label>Участок <input name="site"></label><br>
+    <label>Буровая <input name="rig"></label><br>
+    <label>XRVS <input name="xrvs"></label><br>
+    <label>Метраж <input name="metr"></label><br>
+    <label>Диаметр <input name="diameter"></label><br>
+    <label>Вид операции <input name="operation"></label><br>
+    <label>МБУ <input name="mbu" value="по умолчанию"></label><br>
+    <label>Ответственный <input name="responsible"></label><br>
+    <label>Бурильщик <input name="driller" value="{{ driller }}"></label><br>
+    <label>Погонометр <input name="pogonomet"></label><br>
+    <label>Примечание <textarea name="note"></textarea></label><br>
+    <button type="submit">Отправить</button>
+  </form>
+</body></html>
+HTML
