@@ -1,0 +1,23 @@
+cat > templates/admin_users.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Пользователи</title></head>
+<body>
+  <h2>Пользователи</h2>
+  {% if error %}<div style="color:red">{{ error }}</div>{% endif %}
+  <form method="post" action="/admin/users">
+    <label>Логин <input name="username"></label><br>
+    <label>Пароль <input name="password" type="password"></label><br>
+    <label>ФИО <input name="full_name"></label><br>
+    <label>Роль <select name="role"><option value="driller">driller</option><option value="dispatcher">dispatcher</option></select></label><br>
+    <button type="submit">Создать</button>
+  </form>
+  <h3>Существующие</h3>
+  <table border=1>
+    <tr><th>ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Действие</th></tr>
+    {% for u in users %}
+    <tr><td>{{u.id}}</td><td>{{u.username}}</td><td>{{u.full_name}}</td><td>{{u.role}}</td>
+    <td><form method="post" action="/admin/users/delete"><input type="hidden" name="user_id" value="{{u.id}}"><button>Удалить</button></form></td></tr>
+    {% endfor %}
+  </table>
+  <a href="/dispatcher">Назад</a>
+</body></html>
+HTML
