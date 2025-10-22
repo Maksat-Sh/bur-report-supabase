@@ -1,4 +1,3 @@
-cat > main.py <<'PY'
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
