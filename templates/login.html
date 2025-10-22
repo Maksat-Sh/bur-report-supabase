@@ -1,0 +1,12 @@
+cat > templates/login.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Login</title></head>
+<body>
+  <h2>Вход</h2>
+  {% if error %}<div style="color:red">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <label>Логин <input name="username"></label><br>
+    <label>Пароль <input name="password" type="password"></label><br>
+    <button type="submit">Войти</button>
+  </form>
+</body></html>
+HTML
