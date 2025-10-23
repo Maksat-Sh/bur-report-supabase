@@ -108,13 +108,19 @@
         <label>Вид работ:</label>
         <input type="text" name="operation">
 
-        <label>Бурильщик:</label>
-        <input type="text" name="driller">
+       <!-- вместо editable input -->
+<label>Бурильщик</label>
+<input type="text" name="display_driller" value="{{ driller }}" readonly />
+<!-- отправляем driller скрыто (но лучше не отправлять, мы берём на сервере из cookie) -->
+<input type="hidden" name="driller" value="{{ driller }}">
+
 
         <label>Примечание:</label>
         <textarea name="note" rows="3"></textarea>
 
         <button type="submit">Отправить</button>
+        <a href="/logout" class="btn">Выйти</a>
+
     </form>
 
     <script>
