@@ -6,6 +6,14 @@ from sqlalchemy import Column, Integer, String, DateTime, Text
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import os, bcrypt, tempfile, pandas as pd
+# main.py (вверху)
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+from supabase_client import insert_report, get_user_by_username, select_reports, get_users, insert_user
+import bcrypt
+import requests
 
 from database import SessionLocal, Base, engine
 
