@@ -7,3 +7,4 @@ python-multipart
 openpyxl
 python-dotenv
 bcrypt
+pandas
