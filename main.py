@@ -46,6 +46,12 @@ class Report(Base):
     note = Column(Text)
 
 Base.metadata.create_all(bind=engine)
+def get_current_user(request: Request):
+    username = request.cookies.get("user")
+    if not username:
+        return None
+    return get_user_by_username(username)
+
 
 def init_users():
     db = SessionLocal()
@@ -133,20 +139,40 @@ def submit_form(request: Request,
                 metr: str = Form(None),
                 diameter: str = Form(None),
                 operation: str = Form(None),
-                mbu: str = Form(None),
-                responsible: str = Form(None),
-                driller: str = Form(...),
                 pogonomet: str = Form(None),
-                note: str = Form(None),
-                db: Session = Depends(get_db)):
+                note: str = Form(None)):
+    # получаем текущего пользователя
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    # driller fullname из user (авто)
+    driller_name = user.get("full_name") or user.get("username")
+
     try:
         dt = datetime.fromisoformat(date_time)
     except Exception:
         dt = datetime.utcnow()
-    rpt = Report(date_time=dt, site=site, rig=rig, xrvs=xrvs, metr=metr, diameter=diameter, operation=operation, mbu=mbu, responsible=responsible, driller=driller, pogonomet=pogonomet, note=note)
-    db.add(rpt)
-    db.commit()
-    return templates.TemplateResponse("form.html", {"request": request, "message":"Сводка отправлена", "now": (datetime.utcnow()+timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M"), "driller": driller})
+
+    payload = {
+        "date_time": dt.isoformat(),
+        "site": site,
+        "rig": rig,
+        "xrvs": xrvs or "",
+        "metr": metr or "",
+        "diameter": diameter or "",
+        "operation": operation or "",
+        "mbu": driller_name,      # МБУ/Ответственное лицо авто
+        "driller": driller_name,
+        "pogonomet": pogonomet or "",
+        "note": note or ""
+    }
+    try:
+        insert_report(payload)
+    except Exception as e:
+        # логируем и показываем ошибку
+        return templates.TemplateResponse("form.html", {"request": request, "error": f"Ошибка при сохранении: {e}", "now": (datetime.utcnow()+timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M"), "driller": driller_name})
+    return templates.TemplateResponse("form.html", {"request": request, "message":"Сводка отправлена", "now": (datetime.utcnow()+timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M"), "driller": driller_name})
+
 
 @app.get("/dispatcher", response_class=HTMLResponse)
 def dispatcher_page(request: Request, db: Session = Depends(get_db)):
@@ -157,36 +183,54 @@ def dispatcher_page(request: Request, db: Session = Depends(get_db)):
 
 from fastapi import Query
 @app.get("/api/reports")
-def api_reports(date: str | None = Query(None), rig: str | None = Query(None), db: Session = Depends(get_db)):
-    q = db.query(Report)
+def api_reports(date: str | None = Query(None), rig: str | None = Query(None)):
+    # вызов select_reports с фильтрами (PostgREST query)
+    params = {}
+    if date:
+        # postgrest фильтрация может быть по диапазону; проще получить все и фильтровать в коде:
+        # но можно использовать filter: date_time=gte.2025-10-01T00:00:00
+        # для простоты: получим все и фильтруем в Python
+        pass
+    try:
+        items = select_reports()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    out = []
+    for r in items:
+        dt = r.get("date_time")
+        if dt:
+            try:
+                dt_obj = datetime.fromisoformat(dt)
+                dt_str = (dt_obj + timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                dt_str = dt
+        else:
+            dt_str = ""
+        out.append({
+            "id": r.get("id"),
+            "datetime": dt_str,
+            "site": r.get("site"),
+            "rig": r.get("rig"),
+            "xrvs": r.get("xrvs"),
+            "metr": r.get("metr"),
+            "diameter": r.get("diameter"),
+            "operation": r.get("operation"),
+            "driller": r.get("driller"),
+            "mbu": r.get("mbu"),
+            "pogonomet": r.get("pogonomet"),
+            "note": r.get("note")
+        })
+    # простой фильтр по rig/date если нужны
+    if rig:
+        out = [o for o in out if rig.lower() in (o["rig"] or "").lower()]
     if date:
         try:
             date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-            q = q.filter(Report.date_time >= datetime.combine(date_obj, datetime.min.time()),
-                         Report.date_time <= datetime.combine(date_obj, datetime.max.time()))
+            out = [o for o in out if o["datetime"] and datetime.strptime(o["datetime"], "%Y-%m-%d %H:%M:%S").date() == date_obj]
         except Exception:
             pass
-    if rig:
-        q = q.filter(Report.rig.ilike(f"%{rig}%"))
-    items = q.order_by(Report.date_time.desc()).all()
-    out = []
-    for r in items:
-        out.append({
-            "id": r.id,
-            "datetime": (r.date_time + timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S") if r.date_time else "",
-            "site": r.site,
-            "rig": r.rig,
-            "xrvs": r.xrvs,
-            "metr": r.metr,
-            "diameter": r.diameter,
-            "operation": r.operation,
-            "mbu": r.mbu,
-            "responsible": r.responsible,
-            "driller": r.driller,
-            "pogonomet": r.pogonomet,
-            "note": r.note
-        })
     return out
+
 
 @app.get("/admin/users", response_class=HTMLResponse)
 def admin_users_page(request: Request, db: Session = Depends(get_db)):
