@@ -245,4 +245,4 @@ def export_excel(db: Session = Depends(get_db), request: Request = None):
     tmp.close()
     df.to_excel(tmp.name, index=False, engine="openpyxl")
     return FileResponse(path=tmp.name, filename="reports.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-PY
+
