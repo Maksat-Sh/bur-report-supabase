@@ -1,22 +1,136 @@
-cat > templates/form.html <<'HTML'
-<!doctype html><html><head><meta charset="utf-8"><title>Форма</title></head>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сводка буровика</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            background-color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #ffcc00;
+            padding: 10px 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        header img {
+            height: 50px;
+        }
+        header h1 {
+            flex: 1;
+            text-align: center;
+            color: #333;
+            margin: 0;
+            font-size: 22px;
+        }
+        header a {
+            background-color: #333;
+            color: white;
+            text-decoration: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            transition: background 0.3s;
+        }
+        header a:hover {
+            background-color: #555;
+        }
+        form {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #f9f9f9;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            margin-top: 20px;
+            width: 100%;
+            padding: 12px;
+            background-color: #ffcc00;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background-color: #ffb400;
+        }
+    </style>
+</head>
 <body>
-  <h2>Форма бурильщика</h2>
-  {% if message %}<div style="color:green">{{ message }}</div>{% endif %}
-  <form method="post" action="/submit">
-    <label>Дата и время <input type="datetime-local" name="date_time" value="{{ now }}"></label><br>
-    <label>Участок <input name="site"></label><br>
-    <label>Буровая <input name="rig"></label><br>
-    <label>XRVS <input name="xrvs"></label><br>
-    <label>Метраж <input name="metr"></label><br>
-    <label>Диаметр <input name="diameter"></label><br>
-    <label>Вид операции <input name="operation"></label><br>
-    <label>МБУ <input name="mbu" value="по умолчанию"></label><br>
-    <label>Ответственный <input name="responsible"></label><br>
-    <label>Бурильщик <input name="driller" value="{{ driller }}"></label><br>
-    <label>Погонометр <input name="pogonomet"></label><br>
-    <label>Примечание <textarea name="note"></textarea></label><br>
-    <button type="submit">Отправить</button>
-  </form>
-</body></html>
-HTML
+    <header>
+        <img src="/static/logo.png" alt="Волковгеология">
+        <h1>Сводка буровика</h1>
+        <a href="/login">Выйти</a>
+    </header>
+
+    <form id="reportForm">
+        <label>Дата и время:</label>
+        <input type="datetime-local" name="date_time" required>
+
+        <label>Участок:</label>
+        <input type="text" name="site" required>
+
+        <label>Номер буровой / XRVS:</label>
+        <input type="text" name="xrvs" required>
+
+        <label>Метраж:</label>
+        <input type="number" name="metr" required>
+
+        <label>Погонометр:</label>
+        <input type="text" name="pogonmetr">
+
+        <label>Диаметр:</label>
+        <input type="text" name="diameter">
+
+        <label>Вид работ:</label>
+        <input type="text" name="operation">
+
+        <label>Бурильщик:</label>
+        <input type="text" name="driller">
+
+        <label>Примечание:</label>
+        <textarea name="note" rows="3"></textarea>
+
+        <button type="submit">Отправить</button>
+    </form>
+
+    <script>
+        document.getElementById("reportForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const response = await fetch("/submit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data),
+            });
+            const result = await response.json();
+            alert(result.message);
+            e.target.reset();
+        });
+    </script>
+</body>
+</html>
