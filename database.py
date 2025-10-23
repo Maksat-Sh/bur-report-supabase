@@ -46,4 +46,4 @@ for attempt in range(1, max_retries + 1):
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 Base = declarative_base()
-PY
+
