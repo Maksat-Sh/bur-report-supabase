@@ -1,4 +1,3 @@
-cat > database.py <<'PY'
 # database.py - improved connection & check
 import os, time, logging
 from sqlalchemy import create_engine, text
