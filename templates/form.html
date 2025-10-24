@@ -86,39 +86,28 @@
         <a href="/login">Выйти</a>
     </header>
 
-    <form id="reportForm">
-        <label>Дата и время:</label>
-        <input type="datetime-local" name="date_time" required>
+   <form action="/submit" method="post">
+  <label>Дата и время:</label>
+  <input type="datetime-local" name="date_time" required><br>
 
-        <label>Участок:</label>
-        <input type="text" name="site" required>
+  <label>Участок:</label>
+  <input type="text" name="location" required><br>
 
-        <label>Номер буровой / XRVS:</label>
-        <input type="text" name="xrvs" required>
+  <label>Номер буровой:</label>
+  <input type="text" name="rig_number" required><br>
 
-        <label>Метраж:</label>
-        <input type="number" name="metr" required>
+  <label>Метраж:</label>
+  <input type="number" name="meterage" step="0.1" required><br>
 
-        <label>Погонометр:</label>
-        <input type="text" name="pogonmetr">
+  <label>Погонометр:</label>
+  <input type="number" name="pogon" step="0.1" required><br>
 
-        <label>Диаметр:</label>
-        <input type="text" name="diameter">
+  <label>Примечание:</label>
+  <textarea name="note"></textarea><br>
 
-        <label>Вид работ:</label>
-        <input type="text" name="operation">
+  <button type="submit">Отправить</button>
+</form>
 
-       <!-- вместо editable input -->
-<label>Бурильщик</label>
-<input type="text" name="display_driller" value="{{ driller }}" readonly />
-<!-- отправляем driller скрыто (но лучше не отправлять, мы берём на сервере из cookie) -->
-<input type="hidden" name="driller" value="{{ driller }}">
-
-
-        <label>Примечание:</label>
-        <textarea name="note" rows="3"></textarea>
-
-        <button type="submit">Отправить</button>
         <a href="/logout" class="btn">Выйти</a>
 
     </form>
