@@ -137,8 +137,23 @@ def export_excel():
     from fastapi.responses import StreamingResponse
 
 output.seek(0)
-return StreamingResponse(
-    output,
-    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
-)
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+
+@app.get("/export")
+async def export_to_excel():
+    reports = await get_reports()
+    if not reports:
+        return {"error": "Нет данных для экспорта"}
+
+    df = pd.DataFrame(reports)
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
+    )
