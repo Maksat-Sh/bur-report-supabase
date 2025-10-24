@@ -3,55 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <title>Сводки буровиков</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: Arial; background: #f4f4f4; margin: 0; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; background: white; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+        th { background: #007bff; color: white; }
+        button, a { display: inline-block; margin: 10px 5px; padding: 8px 12px; text-decoration: none; border-radius: 5px; }
+        .excel { background: green; color: white; }
+        .logout { background: red; color: white; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Сводки буровиков</h2>
-        <div class="controls">
-            <button onclick="loadReports()">Обновить</button>
-            <a href="/export" class="btn">Экспорт в Excel</a>
-            <a href="/logout" class="logout-btn">Выйти</a>
-        </div>
-        <table id="reportsTable">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Дата/время</th>
-                    <th>Участок</th>
-                    <th>Буровая</th>
-                    <th>Метраж</th>
-                    <th>Погонометр</th>
-                    <th>Примечание</th>
-                    <th>Ответственное лицо</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
+<h2>Сводки буровиков</h2>
+<a class="excel" href="/export_excel">📊 Экспорт в Excel</a>
+<a class="logout" href="/logout">🚪 Выход</a>
 
-    <script>
-        async function loadReports() {
-            const res = await fetch('/api/reports');
-            const data = await res.json();
-            const tbody = document.querySelector('#reportsTable tbody');
-            tbody.innerHTML = '';
-            data.forEach(r => {
-                const row = `
-                    <tr>
-                        <td>${r.id}</td>
-                        <td>${r.date_time}</td>
-                        <td>${r.location}</td>
-                        <td>${r.rig_number}</td>
-                        <td>${r.meterage}</td>
-                        <td>${r.pogon}</td>
-                        <td>${r.note || ''}</td>
-                        <td>${r.operator_name}</td>
-                    </tr>`;
-                tbody.innerHTML += row;
-            });
-        }
-        loadReports();
-    </script>
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Дата и время</th>
+        <th>Участок</th>
+        <th>Номер буровой</th>
+        <th>Метраж</th>
+        <th>Погонометр</th>
+        <th>Примечание</th>
+        <th>Ответственное лицо</th>
+    </tr>
+    {% for r in reports %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.date_time }}</td>
+        <td>{{ r.location }}</td>
+        <td>{{ r.rig_number }}</td>
+        <td>{{ r.meterage }}</td>
+        <td>{{ r.pogon }}</td>
+        <td>{{ r.note }}</td>
+        <td>{{ r.operator_name }}</td>
+    </tr>
+    {% endfor %}
+</table>
 </body>
 </html>
