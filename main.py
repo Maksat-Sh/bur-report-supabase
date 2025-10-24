@@ -134,4 +134,11 @@ def export_excel():
     buffer = BytesIO()
     df.to_excel(buffer, index=False)
     buffer.seek(0)
-    return FileResponse(buffer, filename=f"reports_{datetime.now().date()}.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    from fastapi.responses import StreamingResponse
+
+output.seek(0)
+return StreamingResponse(
+    output,
+    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
+)
