@@ -135,8 +135,6 @@ def export_excel():
     df.to_excel(buffer, index=False)
     buffer.seek(0)
     from fastapi.responses import StreamingResponse
-
-output.seek(0)
 from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
@@ -155,5 +153,9 @@ async def export_to_excel():
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
+        headers={
+            "Content-Disposition": "attachment; filename=reports.xlsx"
+        }
     )
+
+
