@@ -3,49 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <title>Сводка буровика</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: Arial; background: #f5f5f5; margin: 0; padding: 20px; }
+        form { background: white; padding: 20px; border-radius: 10px; max-width: 400px; margin: auto; box-shadow: 0 0 10px #ccc; }
+        input, textarea, select { width: 100%; padding: 8px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; }
+        button { background: #007bff; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; }
+        button:hover { background: #0056b3; }
+        .logout { text-align: center; margin-top: 20px; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Сводка буровика</h2>
-        <form id="reportForm">
-            <label>Дата и время:</label>
-            <input type="datetime-local" name="date_time" required>
+<h2 style="text-align:center;">Сводка буровика</h2>
+<form id="reportForm">
+    <label>Дата и время:</label>
+    <input type="datetime-local" name="date_time" required>
 
-            <label>Участок:</label>
-            <input type="text" name="location" required>
+    <label>Участок:</label>
+    <input type="text" name="location" required>
 
-            <label>Номер буровой:</label>
-            <input type="text" name="rig_number" required>
+    <label>Номер буровой:</label>
+    <input type="text" name="rig_number" required>
 
-            <label>Метраж:</label>
-            <input type="number" step="0.01" name="meterage" required>
+    <label>Метраж:</label>
+    <input type="number" step="0.1" name="meterage" required>
 
-            <label>Погонометр:</label>
-            <input type="number" step="0.01" name="pogon" required>
+    <label>Погонометр:</label>
+    <input type="number" step="0.1" name="pogon" required>
 
-            <label>Примечание:</label>
-            <textarea name="note"></textarea>
+    <label>Примечание:</label>
+    <textarea name="note"></textarea>
 
-            <label>Ответственное лицо:</label>
-            <input type="text" name="operator_name" value="{{ user.full_name }}" readonly>
+    <p><strong>Ответственное лицо:</strong> {{ user.full_name }}</p>
 
-            <button type="submit">Отправить</button>
-        </form>
+    <button type="submit">Отправить</button>
+</form>
 
-        <a href="/logout" class="logout-btn">Выйти</a>
-    </div>
+<div class="logout">
+    <a href="/logout">Выйти</a>
+</div>
 
-    <script>
-        const form = document.getElementById('reportForm');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const response = await fetch('/submit', { method: 'POST', body: formData });
-            const result = await response.json();
-            alert(result.message || result.error);
-            if (result.message) form.reset();
-        });
-    </script>
+<script>
+document.getElementById("reportForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const response = await fetch("/submit", { method: "POST", body: formData });
+    const result = await response.json();
+    alert(result.message);
+    e.target.reset();
+});
+</script>
 </body>
 </html>
