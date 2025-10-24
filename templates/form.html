@@ -2,129 +2,49 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Сводка буровика</title>
     <link rel="stylesheet" href="/static/style.css">
-    <style>
-        body {
-            background-color: white;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: #ffcc00;
-            padding: 10px 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        header img {
-            height: 50px;
-        }
-        header h1 {
-            flex: 1;
-            text-align: center;
-            color: #333;
-            margin: 0;
-            font-size: 22px;
-        }
-        header a {
-            background-color: #333;
-            color: white;
-            text-decoration: none;
-            padding: 8px 14px;
-            border-radius: 6px;
-            transition: background 0.3s;
-        }
-        header a:hover {
-            background-color: #555;
-        }
-        form {
-            max-width: 600px;
-            margin: 40px auto;
-            background: #f9f9f9;
-            padding: 20px 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        label {
-            display: block;
-            margin-top: 15px;
-            font-weight: bold;
-        }
-        input, textarea {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-        }
-        button {
-            margin-top: 20px;
-            width: 100%;
-            padding: 12px;
-            background-color: #ffcc00;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: bold;
-            color: #333;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        button:hover {
-            background-color: #ffb400;
-        }
-    </style>
 </head>
 <body>
-    <header>
-        <img src="/static/logo.png" alt="Волковгеология">
-        <h1>Сводка буровика</h1>
-        <a href="/login">Выйти</a>
-    </header>
+    <div class="container">
+        <h2>Сводка буровика</h2>
+        <form id="reportForm">
+            <label>Дата и время:</label>
+            <input type="datetime-local" name="date_time" required>
 
-   <form action="/submit" method="post">
-  <label>Дата и время:</label>
-  <input type="datetime-local" name="date_time" required><br>
+            <label>Участок:</label>
+            <input type="text" name="location" required>
 
-  <label>Участок:</label>
-  <input type="text" name="location" required><br>
+            <label>Номер буровой:</label>
+            <input type="text" name="rig_number" required>
 
-  <label>Номер буровой:</label>
-  <input type="text" name="rig_number" required><br>
+            <label>Метраж:</label>
+            <input type="number" step="0.01" name="meterage" required>
 
-  <label>Метраж:</label>
-  <input type="number" name="meterage" step="0.1" required><br>
+            <label>Погонометр:</label>
+            <input type="number" step="0.01" name="pogon" required>
 
-  <label>Погонометр:</label>
-  <input type="number" name="pogon" step="0.1" required><br>
+            <label>Примечание:</label>
+            <textarea name="note"></textarea>
 
-  <label>Примечание:</label>
-  <textarea name="note"></textarea><br>
+            <label>Ответственное лицо:</label>
+            <input type="text" name="operator_name" value="{{ user.full_name }}" readonly>
 
-  <button type="submit">Отправить</button>
-</form>
+            <button type="submit">Отправить</button>
+        </form>
 
-        <a href="/logout" class="btn">Выйти</a>
-
-    </form>
+        <a href="/logout" class="logout-btn">Выйти</a>
+    </div>
 
     <script>
-        document.getElementById("reportForm").addEventListener("submit", async (e) => {
+        const form = document.getElementById('reportForm');
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            const response = await fetch("/submit", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data),
-            });
+            const formData = new FormData(form);
+            const response = await fetch('/submit', { method: 'POST', body: formData });
             const result = await response.json();
-            alert(result.message);
-            e.target.reset();
+            alert(result.message || result.error);
+            if (result.message) form.reset();
         });
     </script>
 </body>
