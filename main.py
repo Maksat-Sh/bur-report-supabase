@@ -18,6 +18,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_API_KEY:
+    import os
+print("DEBUG SUPABASE_URL =", os.getenv("SUPABASE_URL"))
+print("DEBUG SUPABASE_API_KEY =", os.getenv("SUPABASE_API_KEY"))
+
     raise RuntimeError("SUPABASE_URL или SUPABASE_API_KEY не найдены в .env")
 
 SUPABASE_HEADERS = {
