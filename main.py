@@ -1,179 +1,72 @@
 import os
-import io
-import requests
-import pandas as pd
-from fastapi import FastAPI, Form, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import HTTPBasic
-from starlette.middleware.sessions import SessionMiddleware
-from dotenv import load_dotenv
-from datetime import datetime
-
-# === Загрузка .env ===
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
-
-if not SUPABASE_URL or not SUPABASE_API_KEY:
-    raise RuntimeError("SUPABASE_URL или SUPABASE_API_KEY не найдены в .env")
-
-SUPABASE_HEADERS = {
-    "apikey": SUPABASE_API_KEY,
-    "Authorization": f"Bearer {SUPABASE_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-# === Настройка приложения ===
-app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
-
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# --- USERS ---
-USERS = {
-    "bur1": {"password": "123", "role": "driller", "full_name": "Бурильщик 1"},
-    "bur2": {"password": "123", "role": "driller", "full_name": "Бурильщик 2"},
-    "dispatcher": {"password": "dispatch123", "role": "dispatcher", "full_name": "Диспетчер"},
-    "admin": {"password": "9999", "role": "admin", "full_name": "Администратор"},
-}
-
-# === Авторизация ===
-@app.get("/", response_class=HTMLResponse)
-def root(request: Request):
-    user = request.session.get("user")
-    if user:
-        role = user["role"]
-        if role in ("dispatcher", "admin"):
-            return RedirectResponse("/dispatcher")
-        elif role == "driller":
-            return RedirectResponse("/form")
-    return RedirectResponse("/login")
-
-
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.post("/login")
-def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    user = USERS.get(username)
-    if not user or user["password"] != password:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
-    request.session["user"] = user
-    return RedirectResponse("/", status_code=303)
-
-
-@app.get("/logout")
-def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login")
-
-# === Форма буровика ===
-@app.get("/form", response_class=HTMLResponse)
-def form_page(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] != "driller":
-        return RedirectResponse("/login")
-    return templates.TemplateResponse("form.html", {"request": request, "user": user})
-
-
-@app.post("/submit")
-def submit_report(request: Request,
-                  date_time: str = Form(...),
-                  rig_number: str = Form(...),
-                  meterage: float = Form(...),
-                  pogon: float = Form(...),
-                  note: str = Form(""),
-                  location: str = Form(...)):
-    user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    report_data = {
-        "date_time": date_time,
-        "rig_number": rig_number,
-        "meterage": meterage,
-        "pogon": pogon,
-        "note": note,
-        "operator_name": user["full_name"],
-        "location": location,
-    }
-
-    r = requests.post(f"{SUPABASE_URL}/rest/v1/reports", headers=SUPABASE_HEADERS, json=report_data)
-    if r.status_code not in (200, 201):
-        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении отчёта: {r.text}")
-
-    return {"message": "Сводка успешно отправлена!"}
-
-
-# === Интерфейс диспетчера ===
 @app.get("/dispatcher", response_class=HTMLResponse)
 def dispatcher_page(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] not in ("dispatcher", "admin"):
-        return RedirectResponse("/login")
-
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
-    reports = r.json() if r.status_code == 200 else []
-
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports})
+user = request.session.get("user")
+if not user or user.get("role") not in ("dispatcher", "admin"):
+return RedirectResponse("/login")
 
 
-# === Экспорт в Excel ===
+reports_list = []
+if USE_SUPABASE:
+r = supabase_get_reports()
+if r.status_code == 200:
+reports_list = r.json()
+else:
+with engine.connect() as conn:
+rows = conn.execute(select(reports).order_by(reports.c.created_at.desc())).fetchall()
+for row in rows:
+reports_list.append({
+"id": row.id,
+"date_time": row.date_time.isoformat() if row.date_time else None,
+"location": row.location,
+"rig_number": row.rig_number,
+"meterage": row.meterage,
+"pogon": row.pogon,
+"note": row.note,
+"operator_name": row.operator_name,
+"created_at": row.created_at.isoformat() if row.created_at else None
+})
+
+
+return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports_list})
+
+
+# --- Export to Excel ---
 @app.get("/export_excel")
 def export_excel():
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
-    data = r.json()
-    if not data:
-        return JSONResponse({"error": "Нет данных для экспорта"})
-
-    df = pd.DataFrame(data)
-    if df.empty:
-        return JSONResponse({"error": "Нет данных"})
-
-    df.rename(columns={
-        "id": "ID",
-        "date_time": "Дата и время",
-        "location": "Участок",
-        "rig_number": "Номер буровой",
-        "meterage": "Метраж",
-        "pogon": "Погонометр",
-        "note": "Примечание",
-        "operator_name": "Ответственное лицо"
-    }, inplace=True)
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Сводка")
-
-    output.seek(0)
-    return StreamingResponse(output,
-                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": "attachment; filename=svodka.xlsx"})
+# fetch data
+data = []
+if USE_SUPABASE:
+r = supabase_get_reports()
+if r.status_code == 200:
+data = r.json()
+else:
+raise HTTPException(500, f"Ошибка при получении данных из Supabase: {r.status_code}")
+else:
+with engine.connect() as conn:
+rows = conn.execute(select(reports).order_by(reports.c.created_at.desc())).fetchall()
+for row in rows:
+data.append({
+"id": row.id,
+"date_time": row.date_time.isoformat() if row.date_time else None,
+"location": row.location,
+"rig_number": row.rig_number,
+"meterage": row.meterage,
+"pogon": row.pogon,
+"note": row.note,
+"operator_name": row.operator_name,
+"created_at": row.created_at.isoformat() if row.created_at else None
+})
 
 
-# === Управление пользователями ===
-@app.get("/users")
-def get_users():
-    return USERS
+if not data:
+return {"error": "Нет данных для экспорта"}
 
 
-@app.post("/add_user")
-def add_user(username: str = Form(...), password: str = Form(...), full_name: str = Form(...)):
-    if username in USERS:
-        return {"error": "Пользователь уже существует"}
-    USERS[username] = {"password": password, "role": "driller", "full_name": full_name}
-    return {"message": "Пользователь добавлен"}
+df = pd.DataFrame(data)
+# ensure columns exist
+expected = ["id", "date_time", "location", "rig_number", "meterage", "pogon", "note", "operator_name", "created_at"]
+for c in expected:
+if c not in df.columns:
+df[c] = None
 
-
-@app.post("/delete_user")
-def delete_user(username: str = Form(...)):
-    if username not in USERS:
-        return {"error": "Пользователь не найден"}
-    del USERS[username]
-    return {"message": "Пользователь удалён"}
