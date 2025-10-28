@@ -7,3 +7,4 @@ python-dotenv
 itsdangerous
 jinja2
 starlette
+python-multipart
