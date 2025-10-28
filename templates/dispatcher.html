@@ -8,26 +8,23 @@
         table { border-collapse: collapse; width: 100%; background: white; }
         th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
         th { background: #007bff; color: white; }
-        button, a { display: inline-block; margin: 10px 5px; padding: 8px 12px; text-decoration: none; border-radius: 5px; }
+        button, a { display: inline-block; margin: 10px 5px; padding: 8px 12px; text-decoration: none; border-radius: 5px; cursor: pointer; }
         .excel { background: green; color: white; }
+        .users { background: orange; color: white; }
         .logout { background: red; color: white; }
+        #userModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
+        #modalContent { background:white; margin:10% auto; padding:20px; width:300px; border-radius:10px; }
     </style>
 </head>
 <body>
 <h2>Сводки буровиков</h2>
 <a class="excel" href="/export_excel">📊 Экспорт в Excel</a>
+<button class="users" onclick="openUserModal()">👤 Пользователи</button>
 <a class="logout" href="/logout">🚪 Выход</a>
 
 <table>
     <tr>
-        <th>ID</th>
-        <th>Дата и время</th>
-        <th>Участок</th>
-        <th>Номер буровой</th>
-        <th>Метраж</th>
-        <th>Погонометр</th>
-        <th>Примечание</th>
-        <th>Ответственное лицо</th>
+        <th>ID</th><th>Дата и время</th><th>Участок</th><th>Номер буровой</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th><th>Ответственное лицо</th>
     </tr>
     {% for r in reports %}
     <tr>
@@ -42,5 +39,45 @@
     </tr>
     {% endfor %}
 </table>
+
+<div id="userModal">
+    <div id="modalContent">
+        <h3>Управление пользователями</h3>
+        <form id="addUserForm">
+            <input type="text" name="username" placeholder="Логин" required><br><br>
+            <input type="password" name="password" placeholder="Пароль" required><br><br>
+            <input type="text" name="full_name" placeholder="ФИО" required><br><br>
+            <button type="submit">Добавить</button>
+        </form>
+        <hr>
+        <form id="deleteUserForm">
+            <input type="text" name="username" placeholder="Логин для удаления" required><br><br>
+            <button type="submit">Удалить</button>
+        </form>
+        <br>
+        <button onclick="closeUserModal()">Закрыть</button>
+    </div>
+</div>
+
+<script>
+function openUserModal() { document.getElementById('userModal').style.display='block'; }
+function closeUserModal() { document.getElementById('userModal').style.display='none'; }
+
+document.getElementById('addUserForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const res = await fetch('/add_user', { method:'POST', body: formData });
+    const data = await res.json();
+    alert(data.message || data.error);
+};
+
+document.getElementById('deleteUserForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const res = await fetch('/delete_user', { method:'POST', body: formData });
+    const data = await res.json();
+    alert(data.message || data.error);
+};
+</script>
 </body>
 </html>
