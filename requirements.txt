@@ -1,12 +1,9 @@
 fastapi
 uvicorn
-sqlalchemy
-psycopg2-binary
-jinja2
-python-multipart
+requests
+pandas
 openpyxl
 python-dotenv
-bcrypt
-pandas
-requests
 itsdangerous
+jinja2
+starlette
