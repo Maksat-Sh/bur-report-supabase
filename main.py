@@ -3,25 +3,21 @@ import io
 import requests
 import pandas as pd
 from fastapi import FastAPI, Form, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.security import HTTPBasic
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 from datetime import datetime
 
-# Загрузка .env
+# === Загрузка .env ===
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_API_KEY:
-    import os
-print("DEBUG SUPABASE_URL =", os.getenv("SUPABASE_URL"))
-print("DEBUG SUPABASE_API_KEY =", os.getenv("SUPABASE_API_KEY"))
-
     raise RuntimeError("SUPABASE_URL или SUPABASE_API_KEY не найдены в .env")
 
 SUPABASE_HEADERS = {
@@ -30,10 +26,10 @@ SUPABASE_HEADERS = {
     "Content-Type": "application/json"
 }
 
+# === Настройка приложения ===
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 
-security = HTTPBasic()
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -45,12 +41,13 @@ USERS = {
     "admin": {"password": "9999", "role": "admin", "full_name": "Администратор"},
 }
 
-# --- Авторизация ---
+# === Авторизация ===
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
-    if request.session.get("user"):
-        role = request.session["user"]["role"]
-        if role == "dispatcher" or role == "admin":
+    user = request.session.get("user")
+    if user:
+        role = user["role"]
+        if role in ("dispatcher", "admin"):
             return RedirectResponse("/dispatcher")
         elif role == "driller":
             return RedirectResponse("/form")
@@ -76,8 +73,7 @@ def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
 
-
-# --- Форма буровика ---
+# === Форма буровика ===
 @app.get("/form", response_class=HTMLResponse)
 def form_page(request: Request):
     user = request.session.get("user")
@@ -87,20 +83,16 @@ def form_page(request: Request):
 
 
 @app.post("/submit")
-def submit_report(
-    request: Request,
-    date_time: str = Form(...),
-    rig_number: str = Form(...),
-    meterage: float = Form(...),
-    pogon: float = Form(...),
-    note: str = Form(""),
-    location: str = Form(...),
-):
+def submit_report(request: Request,
+                  date_time: str = Form(...),
+                  rig_number: str = Form(...),
+                  meterage: float = Form(...),
+                  pogon: float = Form(...),
+                  note: str = Form(""),
+                  location: str = Form(...)):
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    full_name = user["full_name"]
 
     report_data = {
         "date_time": date_time,
@@ -108,39 +100,42 @@ def submit_report(
         "meterage": meterage,
         "pogon": pogon,
         "note": note,
-        "operator_name": full_name,
+        "operator_name": user["full_name"],
         "location": location,
     }
 
-    response = requests.post(f"{SUPABASE_URL}/rest/v1/reports", headers=SUPABASE_HEADERS, json=report_data)
-    if response.status_code not in (200, 201):
-        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении отчёта: {response.text}")
+    r = requests.post(f"{SUPABASE_URL}/rest/v1/reports", headers=SUPABASE_HEADERS, json=report_data)
+    if r.status_code not in (200, 201):
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении отчёта: {r.text}")
 
     return {"message": "Сводка успешно отправлена!"}
 
 
-# --- Интерфейс диспетчера ---
+# === Интерфейс диспетчера ===
 @app.get("/dispatcher", response_class=HTMLResponse)
 def dispatcher_page(request: Request):
     user = request.session.get("user")
     if not user or user["role"] not in ("dispatcher", "admin"):
         return RedirectResponse("/login")
 
-    response = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
-    reports = response.json() if response.status_code == 200 else []
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
+    reports = r.json() if r.status_code == 200 else []
 
     return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports})
 
 
-# --- Экспорт в Excel ---
+# === Экспорт в Excel ===
 @app.get("/export_excel")
 def export_excel():
-    response = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
-    data = response.json()
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=SUPABASE_HEADERS)
+    data = r.json()
     if not data:
-        return {"error": "Нет данных для экспорта"}
+        return JSONResponse({"error": "Нет данных для экспорта"})
 
     df = pd.DataFrame(data)
+    if df.empty:
+        return JSONResponse({"error": "Нет данных"})
+
     df.rename(columns={
         "id": "ID",
         "date_time": "Дата и время",
@@ -157,5 +152,28 @@ def export_excel():
         df.to_excel(writer, index=False, sheet_name="Сводка")
 
     output.seek(0)
-    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    return StreamingResponse(output,
+                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": "attachment; filename=svodka.xlsx"})
+
+
+# === Управление пользователями ===
+@app.get("/users")
+def get_users():
+    return USERS
+
+
+@app.post("/add_user")
+def add_user(username: str = Form(...), password: str = Form(...), full_name: str = Form(...)):
+    if username in USERS:
+        return {"error": "Пользователь уже существует"}
+    USERS[username] = {"password": password, "role": "driller", "full_name": full_name}
+    return {"message": "Пользователь добавлен"}
+
+
+@app.post("/delete_user")
+def delete_user(username: str = Form(...)):
+    if username not in USERS:
+        return {"error": "Пользователь не найден"}
+    del USERS[username]
+    return {"message": "Пользователь удалён"}
