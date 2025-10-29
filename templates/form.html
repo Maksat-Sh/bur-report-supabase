@@ -1,11 +1,77 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Форма МБУ</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><div class="card"><h2>Форма МБУ</h2><div class="message">{% if message %}{{ message }}{% endif %}</div>
-<form method="post" action="/submit" id="reportForm">
-  <label>Дата и время<input type="datetime-local" name="date_time" required></label>
-  <label>Участок (MBU)<input name="location" required></label>
-  <label>Номер буровой<input name="rig_number" required></label>
-  <label>Метраж<input name="meterage" type="number" step="0.1" required></label>
-  <label>Погонометр<input name="pogon" type="number" step="0.1" required></label>
-  <label>Примечание<textarea name="note"></textarea></label>
-  <div class="buttons"><button type="submit">Отправить</button> <a href="/logout" class="btn">Выход</a></div>
-</form></div></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Форма буровика</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card">
+    <h2>Форма сводки (МБУ)</h2>
+    <form id="reportForm" method="post" action="/submit">
+      <label>Дата и время</label>
+      <input name="date_time" type="datetime-local">
+
+      <label>МБУ (участок)</label>
+      <input name="location" required>
+
+      <label>Номер буровой</label>
+      <input name="rig_number" required>
+
+      <label>Метраж</label>
+      <input name="meterage" type="number" step="0.1" required>
+
+      <label>Погонометр</label>
+      <input name="pogon" type="number" step="0.1" required>
+
+      <label>Ответственное лицо</label>
+      <input name="operator_name" placeholder="если пусто, берётся из профиля">
+
+      <label>Вид операции</label>
+      <input name="operation_type" placeholder="напр. бурение, замена колонны">
+
+      <label>Примечание</label>
+      <textarea name="note"></textarea>
+
+      <div class="actions">
+        <button type="submit">Отправить</button>
+        <a class="link" href="/logout">Выход</a>
+      </div>
+    </form>
+
+    <div id="msg" class="toast" style="display:none"></div>
+  </div>
+
+<script>
+const form = document.getElementById('reportForm');
+const msg = document.getElementById('msg');
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(form);
+  try{
+    const res = await fetch('/submit', {
+      method:'POST',
+      headers: {'Accept':'application/json'},
+      body: new URLSearchParams(fd)
+    });
+    if(res.ok){
+      msg.textContent = 'Сводка успешно отправлена';
+      msg.style.display = 'block';
+      msg.className = 'toast success';
+      form.reset();
+      setTimeout(()=>{ msg.style.display='none'; }, 4000);
+    } else {
+      const t = await res.json();
+      msg.textContent = t.detail || 'Ошибка при отправке';
+      msg.style.display = 'block';
+      msg.className = 'toast error';
+    }
+  }catch(err){
+    msg.textContent = 'Ошибка: ' + err;
+    msg.style.display='block';
+    msg.className='toast error';
+  }
+});
+</script>
+</body>
+</html>
