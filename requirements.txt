@@ -8,3 +8,4 @@ itsdangerous
 jinja2
 starlette
 python-multipart
+bcrypt
