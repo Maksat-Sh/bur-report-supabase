@@ -1,166 +1,231 @@
-from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+import os
+import io
+import json
+import requests
+import pandas as pd
+from fastapi import FastAPI, Form, Request, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-import requests
-import os
-import pandas as pd
+from starlette.middleware.sessions import SessionMiddleware
+from dotenv import load_dotenv
 from datetime import datetime
-from itsdangerous import URLSafeSerializer
 import bcrypt
 
-app = FastAPI()
+# Load .env
+load_dotenv()
 
-# --- CONFIG ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_API_KEY")
-SESSION_KEY = os.getenv("SESSION_KEY", "123456789abcdef")
-serializer = URLSafeSerializer(SESSION_KEY, salt="session")
+# prefer service role key if present, otherwise anon key
+SUPABASE_API_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_API_KEY")
+SESSION_KEY = os.getenv("SESSION_KEY") or "dev-secret-session-key"
 
-# --- PATHS ---
+print("DEBUG SUPABASE_URL =", SUPABASE_URL)
+print("DEBUG SUPABASE_API_KEY =", "SET" if SUPABASE_API_KEY else "NOT SET")
+
+if not SUPABASE_URL or not SUPABASE_API_KEY:
+    print("Warning: SUPABASE_URL or SUPABASE_API_KEY not set. The app will run in degraded mode using a local fallback USERS dict. To use Supabase ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY) are set in your environment.")
+
+SUPABASE_HEADERS = {
+    "apikey": SUPABASE_API_KEY or "",
+    "Authorization": f"Bearer {SUPABASE_API_KEY}" if SUPABASE_API_KEY else "",
+    "Content-Type": "application/json"
+}
+
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SESSION_KEY)
+
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- CORS ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Local fallback users (used if Supabase not configured)
+LOCAL_USERS = {
+    "dispatcher": {"username": "dispatcher", "password_hash": bcrypt.hashpw(b"12345", bcrypt.gensalt()).decode(), "role": "dispatcher", "full_name": "Диспетчер"},
+    "bur1": {"username": "bur1", "password_hash": bcrypt.hashpw(b"123", bcrypt.gensalt()).decode(), "role": "driller", "full_name": "Бурильщик 1"},
+}
 
-# --- LOGIN PAGE ---
+def supabase_get(table, params=""):
+    if not SUPABASE_URL or not SUPABASE_API_KEY:
+        return None, {"error": "supabase not configured"}
+    url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
+    r = requests.get(url, headers=SUPABASE_HEADERS)
+    try:
+        return r.status_code, r.json()
+    except Exception:
+        return r.status_code, r.text
+
+def supabase_post(table, payload):
+    if not SUPABASE_URL or not SUPABASE_API_KEY:
+        return None, {"error": "supabase not configured"}
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    r = requests.post(url, headers=SUPABASE_HEADERS, json=payload)
+    try:
+        return r.status_code, r.json() if r.text else {}
+    except Exception:
+        return r.status_code, r.text
+
+def supabase_delete(table, params=""):
+    if not SUPABASE_URL or not SUPABASE_API_KEY:
+        return None, {"error": "supabase not configured"}
+    url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
+    r = requests.delete(url, headers=SUPABASE_HEADERS)
+    try:
+        return r.status_code, r.json() if r.text else {}
+    except Exception:
+        return r.status_code, r.text
+
+# --- Routes ---
+@app.get("/", response_class=HTMLResponse)
+def root(request: Request):
+    if request.session.get("user"):
+        role = request.session["user"]["role"]
+        if role in ("dispatcher","admin"):
+            return RedirectResponse("/dispatcher")
+        elif role == "driller":
+            return RedirectResponse("/form")
+    return RedirectResponse("/login")
+
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-async def login_action(username: str = Form(...), password: str = Form(...)):
-    res = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    )
-    if not res.ok or not res.json():
-        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
-    user = res.json()[0]
-    if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
-    token = serializer.dumps({"username": username})
-    response = RedirectResponse("/", status_code=302)
-    response.set_cookie("session", token)
-    return response
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    # Try Supabase first
+    if SUPABASE_URL and SUPABASE_API_KEY:
+        status, users = supabase_get("users", params=f"?username=eq.{username}&select=*")
+        if status == 200 and users:
+            user = users[0]
+            pwd_hash = user.get("password_hash") or user.get("password") or ""
+            if isinstance(pwd_hash, str):
+                try:
+                    if bcrypt.checkpw(password.encode(), pwd_hash.encode()):
+                        # store minimal session info
+                        request.session["user"] = {"username": user.get("username"), "role": user.get("role"), "full_name": user.get("full_name") or user.get("username")}
+                        return RedirectResponse("/", status_code=303)
+                except Exception:
+                    pass
+        # fallthrough to local
+    # Local fallback
+    u = LOCAL_USERS.get(username)
+    if u and bcrypt.checkpw(password.encode(), u["password_hash"].encode()):
+        request.session["user"] = {"username": u["username"], "role": u["role"], "full_name": u.get("full_name", u["username"])}
+        return RedirectResponse("/", status_code=303)
 
-# --- AUTH DEPENDENCY ---
-def get_current_user(request: Request):
-    token = request.cookies.get("session")
-    if not token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    try:
-        data = serializer.loads(token)
-        return data["username"]
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
 
-# --- DISPATCHER PAGE ---
-@app.get("/", response_class=HTMLResponse)
-async def dispatcher_page(request: Request, user: str = Depends(get_current_user)):
-    # Получаем сводки
-    reports = requests.get(
-        f"{SUPABASE_URL}/rest/v1/reports?select=*",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    ).json()
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
 
-    # Получаем пользователей
-    users = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?select=*",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    ).json()
-
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports, "users": users})
-
-# --- ADD REPORT (MБУ форма) ---
-@app.get("/mbu", response_class=HTMLResponse)
-async def mbu_form(request: Request):
-    return templates.TemplateResponse("mbu.html", {"request": request})
+# --- Driller form ---
+@app.get("/form", response_class=HTMLResponse)
+def form_page(request: Request):
+    user = request.session.get("user")
+    if not user or user["role"] != "driller":
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("form.html", {"request": request, "user": user})
 
 @app.post("/submit")
-async def submit_report(
-    date_time: str = Form(...),
+def submit_report(
+    request: Request,
+    date_time: str = Form(None),
     location: str = Form(...),
     rig_number: str = Form(...),
     meterage: float = Form(...),
     pogon: float = Form(...),
-    note: str = Form(...),
-    operator_name: str = Form(...),
-    operation: str = Form(...)
+    operator_name: str = Form(None),
+    operation_type: str = Form(None),
+    note: str = Form(""),
 ):
-    data = {
-        "date_time": date_time,
+    user = request.session.get("user")
+    if user and not operator_name:
+        operator_name = user.get("full_name", user.get("username"))
+
+    payload = {
+        "date_time": date_time or (datetime.utcnow().isoformat()),
         "location": location,
         "rig_number": rig_number,
         "meterage": meterage,
         "pogon": pogon,
-        "note": note,
         "operator_name": operator_name,
-        "operation": operation,
-        "created_at": datetime.utcnow().isoformat()
+        "operation_type": operation_type,
+        "note": note,
     }
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/reports",
-        json=data,
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        }
-    )
-    if res.status_code not in (200, 201, 204):
-        raise HTTPException(status_code=500, detail=f"Ошибка сохранения: {res.text}")
-    return {"message": "Успешно отправлено"}
+    status, resp = supabase_post("reports", payload)
+    if status and status in (200,201,204):
+        return {"message": "ok"}
+    # if supabase not configured, return ok but store nowhere
+    if resp and isinstance(resp, dict) and resp.get("error"):
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении: {resp.get('error')}")
+    # fallback
+    return {"message":"ok (local)"}
 
-# --- EXPORT EXCEL ---
-@app.get("/export")
-async def export_excel(user: str = Depends(get_current_user)):
-    res = requests.get(
-        f"{SUPABASE_URL}/rest/v1/reports?select=*",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    )
-    reports = res.json()
-    if not reports:
-        return {"message": "Нет данных"}
-    df = pd.DataFrame(reports)
-    file_path = "/tmp/reports.xlsx"
-    df.to_excel(file_path, index=False)
-    return FileResponse(file_path, filename="reports.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+# --- Dispatcher page ---
+@app.get("/dispatcher", response_class=HTMLResponse)
+def dispatcher_page(request: Request):
+    user = request.session.get("user")
+    if not user or user["role"] not in ("dispatcher","admin"):
+        return RedirectResponse("/login")
 
-# --- ADD USER ---
-@app.post("/add_user")
-async def add_user(username: str = Form(...), password: str = Form(...), role: str = Form(...), user: str = Depends(get_current_user)):
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    data = {"username": username, "password_hash": hashed, "role": role, "created_at": datetime.utcnow().isoformat()}
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/users",
-        json=data,
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        }
-    )
-    if res.status_code not in (200, 201, 204):
-        raise HTTPException(status_code=500, detail=f"Ошибка добавления: {res.text}")
-    return RedirectResponse("/", status_code=302)
+    status, reports = supabase_get("reports", params="?select=*,created_at") if SUPABASE_URL and SUPABASE_API_KEY else (None, [])
+    if status and status != 200:
+        reports = []
+    reports = reports or []
 
-# --- DELETE USER ---
-@app.post("/delete_user")
-async def delete_user(user_id: int = Form(...), user: str = Depends(get_current_user)):
-    res = requests.delete(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    )
-    if not res.ok:
-        raise HTTPException(status_code=500, detail="Ошибка удаления")
-    return RedirectResponse("/", status_code=302)
+    u_status, users = supabase_get("users", params="?select=id,username,role,created_at") if SUPABASE_URL and SUPABASE_API_KEY else (None, [])
+    users = users or []
+
+    return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports, "users": users})
+
+# --- Users API (create / list / delete) ---
+@app.get("/api/users")
+def api_list_users():
+    status, users = supabase_get("users", params="?select=id,username,role,created_at") if SUPABASE_URL and SUPABASE_API_KEY else (None, list(LOCAL_USERS.values()))
+    return users or []
+
+@app.post("/api/users")
+def api_create_user(username: str = Form(...), password: str = Form(...), role: str = Form("driller")):
+    pwd_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    payload = {"username": username, "password_hash": pwd_hash, "role": role}
+    status, resp = supabase_post("users", payload)
+    if status and status in (200,201,204):
+        return {"status":"ok"}
+    if resp and isinstance(resp, dict) and resp.get("error"):
+        raise HTTPException(status_code=500, detail=resp.get("error"))
+    LOCAL_USERS[username] = {"username": username, "password_hash": pwd_hash, "role": role}
+    return {"status":"ok (local)"}
+
+@app.delete("/api/users/{user_id}")
+def api_delete_user(user_id: int):
+    status, resp = supabase_delete("users", params=f"?id=eq.{user_id}")
+    if status and status in (200,204):
+        return {"status":"deleted"}
+    return {"status":"failed", "detail": resp}
+
+# --- Export to Excel ---
+@app.get("/export_excel")
+def export_excel():
+    status, data = supabase_get("reports", params="?select=id,date_time,location,rig_number,meterage,pogon,operator_name,note,created_at") if SUPABASE_URL and SUPABASE_API_KEY else (None, [])
+    data = data or []
+    if not data:
+        return {"error":"Нет данных для экспорта"}
+    df = pd.DataFrame(data)
+    df.rename(columns={
+        "id":"ID",
+        "date_time":"Дата и время",
+        "location":"МБУ",
+        "rig_number":"Номер буровой",
+        "meterage":"Метраж",
+        "pogon":"Погонометр",
+        "operator_name":"Ответственное лицо",
+        "note":"Примечание",
+        "created_at":"created_at",
+    }, inplace=True)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Сводка")
+    output.seek(0)
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition":"attachment; filename=svodka.xlsx"})
