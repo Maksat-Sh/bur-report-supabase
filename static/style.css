@@ -1,14 +1,1 @@
-
-body { font-family: Arial, sans-serif; background:#f7f7f7; margin:0; padding:20px;}
-.card, .wrap { background:white; padding:16px; border-radius:8px; max-width:900px; margin:auto; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
-label { display:block; margin:8px 0; }
-input, textarea, select { width:100%; padding:8px; box-sizing:border-box; margin-top:4px; }
-.buttons { margin-top:12px; }
-button, .btn { background:#007bff; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; text-decoration:none; }
-a.btn { display:inline-block; }
-table { width:100%; border-collapse:collapse; margin-top:12px; }
-th, td { border:1px solid #ddd; padding:8px; text-align:center; }
-h2,h3 { margin:8px 0;}
-.message { color:green; margin-bottom:8px; }
-.error { color:red; }
-.top-controls { display:flex; gap:8px; margin-bottom:8px; }
+/* style placeholder */
