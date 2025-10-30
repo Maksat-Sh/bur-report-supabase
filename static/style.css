@@ -1,17 +1,1 @@
-body { font-family: Arial, sans-serif; background:#f4f6f8; padding:20px; margin:0 }
-.card { background:white; padding:16px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,.06); max-width:1000px; margin:12px auto }
-h2 { margin-top:0 }
-label { display:block; margin-top:8px; font-weight:600 }
-input, textarea, select { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; border:1px solid #ddd; border-radius:6px }
-.actions { margin-top:10px; display:flex; gap:8px; align-items:center }
-button, .btn, a.button { padding:8px 12px; border-radius:6px; border:none; cursor:pointer; background:#007bff; color:white; text-decoration:none }
-a.btn.danger, button.danger { background:#d9534f }
-a.btn { margin-right:8px }
-table { width:100%; border-collapse:collapse; margin-top:12px }
-th, td { border:1px solid #eee; padding:6px; text-align:center }
-th { background:#007bff; color:white }
-.top-actions { display:flex; gap:8px; margin-bottom:8px; align-items:center }
-.toast { padding:10px; border-radius:6px; margin-top:10px }
-.toast.success { background:#e6f4ea; color:#1b7a3a }
-.toast.error { background:#fdecea; color:#8a1f1f }
-.users { margin-top:12px }
+body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; } .card { max-width:900px; margin:20px auto; background:#fff; padding:16px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.08); } label { display:block; margin-bottom:8px; } input, select { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; } button { padding:8px 12px; margin-top:8px; } table { width:100%; border-collapse:collapse; margin-top:12px; } th, td { border:1px solid #ddd; padding:8px; text-align:center; } .controls { margin-bottom:12px; } .button { display:inline-block; background:#007bff; color:#fff; padding:8px 10px; border-radius:6px; text-decoration:none; margin-right:8px; }
