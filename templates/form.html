@@ -1,1 +1,18 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Форма</title></head><body><form id='f' method='post' action='/submit'><label>Метраж<input name='meterage' required></label><label>Погон<input name='pogon' required></label><label>Виды<input name='operation_type'></label><label>Примечание<textarea name='note'></textarea></label><button type='submit'>Отправить</button></form><div id='msg' style='display:none'>Отправлено</div><script>document.getElementById('f').addEventListener('submit',async function(e){e.preventDefault();const fd=new FormData(e.target);const r=await fetch('/submit',{method:'POST',body:fd});const j=await r.json();if(j.message==='ok'){document.getElementById('msg').style.display='block';setTimeout(()=>document.getElementById('msg').style.display='none',2000)}else alert('err')})</script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><title>Форма МБУ</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<div class="container"><h2>Сводка — Участок</h2>
+<form id="reportForm" action="/submit" method="post">
+  <label>Дата и время (авто): <input id="dt" name="date_time" readonly></label>
+  <label>Участок (авто): <input name="location" value="{{ user.location }}" readonly></label>
+  <label>№ агрегата (авто): <input name="rig_number" value="{{ user.rig_number }}" readonly></label>
+  <label>Метраж: <input name="meterage" required type="number" step="0.01"></label>
+  <label>Погонометр: <input name="pogon" required type="number" step="0.01"></label>
+  <label>Вид операции: <input name="operation"></label>
+  <label>Примечание: <textarea name="note"></textarea></label>
+  <div class="actions"><button type="submit">Отправить</button> <a href="/logout">Выход</a></div>
+  <div id="result" class="result"></div>
+</form></div>
+<script>
+document.getElementById('dt').value = new Date().toLocaleString();
+const form = document.getElementById('reportForm');
+form.addEventListener('submit', async (e)=>{ e.preventDefault(); const data=new FormData(form); const resp=await fetch('/submit',{method:'POST',body:data}); if(resp.ok){ document.getElementById('result').innerText='Успешно отправлено'; form.reset(); document.getElementById('dt').value=new Date().toLocaleString(); }else{ const txt=await resp.text(); document.getElementById('result').innerText='Ошибка: '+txt;} });
+</script></body></html>
