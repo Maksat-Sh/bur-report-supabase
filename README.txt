@@ -1,0 +1,1 @@
+See README in conversation. Set SUPABASE_URL, SUPABASE_API_KEY, SESSION_KEY in env.
