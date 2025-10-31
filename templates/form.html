@@ -6,15 +6,27 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2>Сводка буровика</h2>
+    <h2>Форма буровика</h2>
     <form action="/submit" method="post">
-        <label>Дата и время:</label><input type="datetime-local" name="date" required><br>
-        <label>Участок:</label><input type="text" name="location" required><br>
-        <label>Номер буровой:</label><input type="text" name="rig_number" required><br>
-        <label>Метраж:</label><input type="number" step="0.1" name="meterage" required><br>
-        <label>Погонометр:</label><input type="number" step="0.1" name="pogonometer" required><br>
-        <label>Примечание:</label><input type="text" name="note"><br>
-        <button type="submit">Отправить</button>
+        <label>Дата и время:</label>
+        <input type="datetime-local" name="date_time" required>
+
+        <label>Участок:</label>
+        <input type="text" name="location" required>
+
+        <label>Номер буровой установки:</label>
+        <input type="text" name="rig_number" required>
+
+        <label>Метраж:</label>
+        <input type="number" step="0.01" name="meterage" required>
+
+        <label>Погонометр:</label>
+        <input type="number" step="0.01" name="pogon" required>
+
+        <label>Примечание:</label>
+        <textarea name="note"></textarea>
+
+        <button type="submit">Отправить сводку</button>
     </form>
 </body>
 </html>
