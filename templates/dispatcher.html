@@ -1,34 +1,11 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Диспетчерская</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
 <body>
-    <h2>Диспетчерская сводок буровиков</h2>
-
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Дата и время</th>
-            <th>Участок</th>
-            <th>Буровая</th>
-            <th>Метраж</th>
-            <th>Погонометр</th>
-            <th>Примечание</th>
-        </tr>
-        {% for r in reports %}
-        <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.date_time }}</td>
-            <td>{{ r.location }}</td>
-            <td>{{ r.rig_number }}</td>
-            <td>{{ r.meterage }}</td>
-            <td>{{ r.pogon }}</td>
-            <td>{{ r.note }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+  <div class="container">
+    <h2>Диспетчер — {{ user.full_name }}</h2>
+    <p><a href="/export_excel">Экспорт в Excel</a></p>
+    <p><a href="/form">Открыть форму буровика</a></p>
+  </div>
 </body>
 </html>

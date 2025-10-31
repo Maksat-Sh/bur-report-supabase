@@ -1,32 +1,34 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Сводка буровика</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Форма буровика</title><link rel="stylesheet" href="/static/style.css"></head>
 <body>
+  <div class="container">
     <h2>Форма буровика</h2>
-    <form action="/submit" method="post">
-        <label>Дата и время:</label>
-        <input type="datetime-local" name="date_time" required>
-
-        <label>Участок:</label>
-        <input type="text" name="location" required>
-
-        <label>Номер буровой установки:</label>
-        <input type="text" name="rig_number" required>
-
-        <label>Метраж:</label>
-        <input type="number" step="0.01" name="meterage" required>
-
-        <label>Погонометр:</label>
-        <input type="number" step="0.01" name="pogon" required>
-
-        <label>Примечание:</label>
-        <textarea name="note"></textarea>
-
-        <button type="submit">Отправить сводку</button>
+    <form id="reportForm" method="post" action="/submit">
+      <label>Дата и время (авто)</label>
+      <input name="date_time" id="date_time" readonly>
+      <label>Участок</label>
+      <select name="site" required>
+        <option>Карамурын</option>
+        <option>Ирколь</option>
+        <option>Хорасан</option>
+        <option>Заречное</option>
+        <option>Степногорск</option>
+      </select>
+      <label>№ агрегата</label><input name="unit_number" required>
+      <label>Метраж</label><input name="metraj">
+      <label>Погонометр</label><input name="pogonometr">
+      <label>Вид операции</label><input name="operation" placeholder="ручной ввод">
+      <label>Ответственное лицо</label><input name="responsible">
+      <label>Примечания</label><textarea name="notes"></textarea>
+      <button type="submit">Отправить</button>
     </form>
+  </div>
+  <script>
+    const dt = new Date();
+    const pad = (n)=>String(n).padStart(2,'0');
+    const isoLocal = dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate())+' '+pad(dt.getHours())+':'+pad(dt.getMinutes())+':'+pad(dt.getSeconds());
+    document.getElementById('date_time').value = isoLocal;
+  </script>
 </body>
 </html>
