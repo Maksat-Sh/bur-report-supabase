@@ -67,7 +67,7 @@ async def login_post(username: str = Form(...), password: str = Form(...)):
         resp = RedirectResponse(url='/dispatcher', status_code=303)
         resp.set_cookie('session', 'admin-session', httponly=True)
         return resp
-    return templates.TemplateResponse('login.html', {'request': Request({}), 'error': 'Invalid credentials'})
+    return templates.TemplateResponse('login.html', {'request': request, 'error': 'Invalid credentials'})
 
 def require_admin(request: Request):
     session = request.cookies.get('session')
