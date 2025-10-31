@@ -1,60 +1,6 @@
-body {
-    font-family: Arial, sans-serif;
-    background: #f2f6fa;
-    color: #333;
-    padding: 20px;
-}
-
-h2 {
-    text-align: center;
-    color: #1e88e5;
-}
-
-form {
-    max-width: 400px;
-    margin: 20px auto;
-    padding: 20px;
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-form label {
-    display: block;
-    margin-top: 10px;
-}
-
-form input, form textarea {
-    width: 100%;
-    padding: 8px;
-    margin-top: 5px;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-}
-
-button {
-    background: #1e88e5;
-    color: white;
-    border: none;
-    padding: 10px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin-top: 15px;
-}
-
-button:hover {
-    background: #1565c0;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 30px;
-    background: white;
-}
-
-table th, table td {
-    padding: 10px;
-    border: 1px solid #ccc;
-    text-align: center;
-}
+body{font-family:Arial, Helvetica, sans-serif;background:#f7f7f7;color:#222}
+.container{max-width:720px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+label{display:block;margin-top:12px;font-weight:600}
+input, select, textarea{width:100%;padding:8px;margin-top:6px;border:1px solid #ddd;border-radius:4px}
+button{margin-top:16px;padding:10px 16px;border:none;background:#246; color:#fff;border-radius:6px;cursor:pointer}
+.error{color:#b00}
