@@ -1,14 +1,7 @@
+fastapi
+uvicorn
 requests
 pandas
 openpyxl
-python-dotenv
-python-multipart
-itsdangerous
-bcrypt
 jinja2
-fastapi
-uvicorn
-jinja2
-asyncpg
 python-multipart
-pydantic
