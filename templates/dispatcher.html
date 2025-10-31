@@ -1,43 +1,34 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Диспетчерская</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
 <body>
-<h2>Диспетчерская панель</h2>
-<a href="/export_excel" class="excel">Экспорт в Excel</a>
-<a href="/logout" class="logout">Выход</a>
-<h3>Сводки</h3>
-<table>
-  <tr><th>ID</th><th>Дата</th><th>Участок</th><th>№ агрегата</th><th>Метраж</th><th>Погон</th><th>Опер.</th><th>Ответственное</th></tr>
-  {% for r in reports %}
-  <tr>
-    <td>{{ r.id }}</td>
-    <td>{{ r.date_time }}</td>
-    <td>{{ r.location }}</td>
-    <td>{{ r.rig_number or r.rig }}</td>
-    <td>{{ r.meterage }}</td>
-    <td>{{ r.pogon }}</td>
-    <td>{{ r.operation }}</td>
-    <td>{{ r.operator_name }}</td>
-  </tr>
-  {% endfor %}
-</table>
-<h3 id="users">Пользователи</h3>
-<form method="post" action="/users/create">
-  <h4>Создать пользователя</h4>
-  <label>Логин</label><input name="username" required>
-  <label>Пароль</label><input name="password" required>
-  <label>Роль</label><select name="role"><option>driller</option><option>dispatcher</option><option>admin</option></select>
-  <label>ФИО</label><input name="full_name">
-  <label>Участок</label><select name="location"><option>Карамурын</option><option>Ирколь</option><option>Хорасан</option><option>Заречное</option><option>Степногорск</option></select>
-  <label>№ агрегата</label><input name="unit">
-  <button type="submit">Создать</button>
-</form>
-<h4>Существующие</h4>
-<table>
-  <tr><th>id</th><th>username</th><th>role</th><th>ФИО</th><th>Участок</th><th>Агрегат</th></tr>
-  {% for u in users %}
-  <tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.role }}</td><td>{{ u.full_name or u.fio }}</td><td>{{ u.location }}</td><td>{{ u.unit }}</td></tr>
-  {% endfor %}
-</table>
+    <h2>Диспетчерская сводок буровиков</h2>
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Дата и время</th>
+            <th>Участок</th>
+            <th>Буровая</th>
+            <th>Метраж</th>
+            <th>Погонометр</th>
+            <th>Примечание</th>
+        </tr>
+        {% for r in reports %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.date_time }}</td>
+            <td>{{ r.location }}</td>
+            <td>{{ r.rig_number }}</td>
+            <td>{{ r.meterage }}</td>
+            <td>{{ r.pogon }}</td>
+            <td>{{ r.note }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 </body>
 </html>
