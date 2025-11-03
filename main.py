@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templates import Jinja2Templates
+from starlette.templating import Jinja2Templates
 from supabase import create_client, Client
 import os, hashlib
 
