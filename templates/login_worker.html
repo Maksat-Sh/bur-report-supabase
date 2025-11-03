@@ -1,21 +1,23 @@
-
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="/static/style.css">
-    <title>Вход — Буровик</title>
+  <meta charset="utf-8" />
+  <title>Вход - Буровик</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<div class="login-container">
-    <h2>Вход буровика</h2>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <form method="post">
-        <input type="text" name="username" placeholder="Логин" required>
-        <input type="password" name="password" placeholder="Пароль" required>
-        <button type="submit">Войти</button>
+  <div class="container">
+    <h1>Вход — Буровик</h1>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form action="/login_worker" method="post" class="form">
+      <label>Логин<br/><input name="username" required/></label>
+      <label>Пароль<br/><input name="password" type="password" required/></label>
+      <button type="submit">Войти</button>
     </form>
-    <a href="/login_dispatcher">Вход для диспетчера</a>
-</div>
+    <p><a href="/login_dispatcher">Вход диспетчера</a></p>
+  </div>
 </body>
 </html>
+
