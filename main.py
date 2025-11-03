@@ -54,12 +54,20 @@ async def supabase_get(path: str, params: Dict[str, str] | None = None) -> List[
         return r.json()
 
 
-async def supabase_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    url = f"{REST_BASE}/{path}"
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.post(url, headers=SUPABASE_HEADERS, json=payload)
-        r.raise_for_status()
+async def supabase_post(table: str, data: dict):
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+    r = httpx.post(url, headers=headers, json=data)
+    try:
         return r.json()
+    except Exception:
+        return {"status": r.status_code, "text": r.text}
+
 
 
 async def supabase_patch(path: str, payload: Dict[str, Any], params: Dict[str, str] | None = None) -> Any:
