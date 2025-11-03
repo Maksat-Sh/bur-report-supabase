@@ -1,11 +1,1 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
-<body>
-  <div class="container">
-    <h2>Диспетчер — {{ user.full_name }}</h2>
-    <p><a href="/export_excel">Экспорт в Excel</a></p>
-    <p><a href="/form">Открыть форму буровика</a></p>
-  </div>
-</body>
-</html>
+<!doctype html><html><head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head><body><div class="card"><h2>Диспетчер — {% if user %}{{ user.full_name }}{% else %}Гость{% endif %}</h2><p><a href="/export_excel">Экспорт в Excel</a> | <a href="/logout">Выйти</a></p><h3>Сводка отчётов</h3><table class="reports"><thead><tr><th>ID</th><th>Дата</th><th>Участок</th><th>№ агрегата</th><th>Метраж</th><th>Погонометр</th><th>Оператор</th><th>Операция</th><th>Прим.</th></tr></thead><tbody>{% for r in reports %}<tr><td>{{ r.id }}</td><td>{{ r.created_at }}</td><td>{{ r.location }}</td><td>{{ r.rig_number }}</td><td>{{ r.meterage }}</td><td>{{ r.pogon }}</td><td>{{ r.operator_name }}</td><td>{{ r.operation_type }}</td><td>{{ r.note }}</td></tr>{% endfor %}</tbody></table></div></body></html>
