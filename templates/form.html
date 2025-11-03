@@ -1,1 +1,21 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Форма буровика</title><link rel="stylesheet" href="/static/style.css"></head><body><div class="card"><h1>Форма отчёта</h1><form method="post" action="/submit"><label>Дата и время <input name="created_at" id="created_at" readonly></label><label>Участок<select name="location" id="location" required><option value="Карамурын">Карамурын</option><option value="Ирколь">Ирколь</option><option value="Хорасан">Хорасан</option><option value="Заречное">Заречное</option><option value="Степногорск">Степногорск</option></select></label><label>№ агрегата <input name="rig_number" id="rig_number"></label><label>Метраж <input name="meterage" type="number" step="0.01" required></label><label>Погонометр <input name="pogon" required></label><label>Вид операции <input name="operation_type" required></label><label>Ответственное лицо <input name="operator_name" id="operator_name" readonly></label><label>Примечания <textarea name="note"></textarea></label><button type="submit">Отправить</button></form><p><a href="/logout">Выйти</a></p></div><script>document.getElementById("created_at").value = new Date().toISOString().slice(0,19).replace('T',' ');{% if user %}document.getElementById("operator_name").value = "{{ user.full_name }}";{% if user.location %}try{ document.getElementById("location").value = "{{ user.location }}"; }catch(e){}{% endif %}{% if user.rig_number %}try{ document.getElementById("rig_number").value = "{{ user.rig_number }}"; }catch(e){}{% endif %}{% endif %}</script></body></html>
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>Сводка буровика</title>
+</head>
+<body>
+<h2>Отправка сводки</h2>
+<form method="post" action="/submit_report">
+    <input type="text" name="location" placeholder="Участок" required>
+    <input type="text" name="rig_number" placeholder="№ буровой установки" required>
+    <input type="text" name="meterage" placeholder="Метраж" required>
+    <input type="text" name="pogon" placeholder="Погонометр" required>
+    <input type="text" name="note" placeholder="Примечание">
+    <input type="text" name="operator_name" placeholder="ФИО оператора" required>
+    <button type="submit">Отправить</button>
+</form>
+</body>
+</html>
