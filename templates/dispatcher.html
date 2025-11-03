@@ -1,29 +1,47 @@
-
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="/static/style.css">
-    <title>Диспетчер</title>
+  <meta charset="utf-8" />
+  <title>Диспетчер</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<h2>Сводки буровиков</h2>
-<table>
-    <tr>
-        <th>ID</th><th>Участок</th><th>№ буровой</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th><th>Оператор</th><th>Дата</th>
-    </tr>
-    {% for r in reports %}
-    <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.location }}</td>
-        <td>{{ r.rig_number }}</td>
-        <td>{{ r.meterage }}</td>
-        <td>{{ r.pogon }}</td>
-        <td>{{ r.note }}</td>
-        <td>{{ r.operator_name }}</td>
-        <td>{{ r.created_at }}</td>
-    </tr>
-    {% endfor %}
-</table>
+  <div class="container">
+    <h1>Диспетчер — {{ user }}</h1>
+    <p><a href="/logout">Выйти</a> — <a href="/export_excel">Экспорт в Excel</a> — <a href="/form">Форма буровика</a></p>
+
+    <table class="reports-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Дата/Время</th>
+          <th>Участок</th>
+          <th>Буровая</th>
+          <th>Метраж</th>
+          <th>Погонометр</th>
+          <th>Буровик</th>
+          <th>Тип операции</th>
+          <th>Примечание</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.created_at or "" }}</td>
+          <td>{{ r.location or "" }}</td>
+          <td>{{ r.rig_number or "" }}</td>
+          <td>{{ r.meterage or "" }}</td>
+          <td>{{ r.pogon or "" }}</td>
+          <td>{{ r.operator_name or "" }}</td>
+          <td>{{ r.operation_type or "" }}</td>
+          <td>{{ r.note or "" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">Нет записей</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </body>
 </html>
