@@ -1,21 +1,29 @@
-
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="/static/style.css">
-    <title>Сводка буровика</title>
+  <meta charset="utf-8" />
+  <title>Форма буровика</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<h2>Отправка сводки</h2>
-<form method="post" action="/submit_report">
-    <input type="text" name="location" placeholder="Участок" required>
-    <input type="text" name="rig_number" placeholder="№ буровой установки" required>
-    <input type="text" name="meterage" placeholder="Метраж" required>
-    <input type="text" name="pogon" placeholder="Погонометр" required>
-    <input type="text" name="note" placeholder="Примечание">
-    <input type="text" name="operator_name" placeholder="ФИО оператора" required>
-    <button type="submit">Отправить</button>
-</form>
+  <div class="container">
+    <h1>Форма буровика</h1>
+    {% if user %}
+      <p>Вошёл: <strong>{{ user }}</strong> — <a href="/logout">Выйти</a></p>
+    {% else %}
+      <p><a href="/login_worker">Войти как буровик</a> | <a href="/login_dispatcher">Войти диспетчером</a></p>
+    {% endif %}
+
+    <form action="/submit" method="post" class="form">
+      <label>Участок<br/><input name="location" required/></label>
+      <label>Номер буровой<br/><input name="rig_number" required/></label>
+      <label>Метраж<br/><input name="meterage" type="number" step="0.01" required/></label>
+      <label>Погонометр<br/><input name="pogon" /></label>
+      <label>Буровик (имя)<br/><input name="operator_name" /></label>
+      <label>Тип операции<br/><input name="operation_type" /></label>
+      <label>Примечание<br/><textarea name="note"></textarea></label>
+      <button type="submit">Отправить</button>
+    </form>
+  </div>
 </body>
 </html>
