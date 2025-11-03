@@ -1,6 +1,8 @@
-body{font-family:Arial, Helvetica, sans-serif;background:#f7f7f7;color:#222}
-.container{max-width:720px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
-label{display:block;margin-top:12px;font-weight:600}
-input, select, textarea{width:100%;padding:8px;margin-top:6px;border:1px solid #ddd;border-radius:4px}
-button{margin-top:16px;padding:10px 16px;border:none;background:#246; color:#fff;border-radius:6px;cursor:pointer}
-.error{color:#b00}
+body{font-family: Arial, sans-serif;background:#f5f7fb;padding:20px}
+.card{max-width:900px;margin:20px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+label{display:block;margin:10px 0}
+input, select, textarea{width:100%;padding:8px;margin-top:4px;border:1px solid #ddd;border-radius:4px}
+button{padding:10px 16px;border:none;border-radius:6px;background:#2b6cb0;color:#fff;cursor:pointer}
+table.reports{width:100%;border-collapse:collapse;margin-top:12px}
+table.reports th, table.reports td{border:1px solid #e6eaf0;padding:8px;text-align:left;font-size:14px}
+.error{background:#ffe6e6;color:#900;padding:8px;border-radius:4px}
