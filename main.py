@@ -17,12 +17,15 @@ from datetime import datetime
 from fastapi import FastAPI, Request, Form, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from passlib.context import CryptContext
 from fastapi.templating import Jinja2Templates
 
 import httpx
 from passlib.hash import bcrypt
 import pandas as pd  # for export
 from pydantic import BaseModel
+
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password_plain_or_hash(plain_password, hashed_password):
