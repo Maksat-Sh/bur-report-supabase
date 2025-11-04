@@ -23,6 +23,15 @@ import httpx
 from passlib.hash import bcrypt
 import pandas as pd  # for export
 from pydantic import BaseModel
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password_plain_or_hash(plain_password, hashed_password):
+    try:
+        if hashed_password.startswith("$2b$"):  # bcrypt
+            return pwd_context.verify(plain_password, hashed_password)
+        return plain_password == hashed_password
+    except Exception:
+        return False
 
 # Config from env
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -205,11 +214,15 @@ async def login_dispatcher_get(request: Request):
 @app.post("/login_dispatcher")
 async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
     user = await get_user_by_username(username)
-    if not user or not verify_password_plain_or_hash(user, password):
+    if not user:
         return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
+    
+    password_hash = user.get("password_hash")
+    if not verify_password_plain_or_hash(password, password_hash):
+        return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
+
     role = user.get("role", "dispatcher")
     return make_auth_response("/dispatcher", username, role)
-
 
 # Dispatcher page (view and export)
 @app.get("/dispatcher", response_class=HTMLResponse)
