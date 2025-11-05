@@ -160,6 +160,32 @@ async def login_dispatcher_post(
     username: str = Form(...),
     password: str = Form(...)
 ):
+    @app.post("/login_dispatcher")
+async def login_dispatcher_post(request: Request):
+    form = await request.form()
+    username = form.get("username")
+    password = form.get("password")
+    # код входа диспетчера...
+
+# 🔽 Сразу после него вставляешь это:
+from datetime import datetime
+
+@app.post("/submit_worker_report")
+async def submit_worker_report(report: dict):
+    try:
+        data = {
+            "site": report["site"],
+            "rig_number": report["rig_number"],
+            "footage": report["footage"],
+            "pogon": report["pogon"],
+            "note": report.get("note", ""),
+            "created_at": datetime.utcnow().isoformat()
+        }
+        supabase.table("reports").insert(data).execute()
+        return {"message": "Сводка успешно отправлена!"}
+    except Exception as e:
+        return {"message": f"Ошибка при сохранении: {str(e)}"}
+
     user = await get_user_by_username(username)
     if not user or not verify_password_plain_or_hash(password, user):
         return templates.TemplateResponse(
