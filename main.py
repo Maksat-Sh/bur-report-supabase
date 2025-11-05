@@ -155,18 +155,19 @@ async def login_worker_form():
     """
 
 @app.post("/login_dispatcher")
-async def login_dispatcher_post(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
-):
-    @app.post("/login_dispatcher")
+async def login_dispatcher_post(request: Request):
     form = await request.form()
     username = form.get("username")
     password = form.get("password")
-    # код входа диспетчера...
+    user = await get_user_by_username(username)
+    if not user or not verify_password_plain_or_hash(password, user["password"]):
+        return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
+    response = RedirectResponse(url="/dispatcher", status_code=303)
+    response.set_cookie(key="username", value=username)
+    return response
 
-# 🔽 Сразу после него вставляешь это:
+
+# 👇 вот здесь вставь этот код — строго без лишних пробелов перед @
 from datetime import datetime
 
 @app.post("/submit_worker_report")
@@ -184,6 +185,7 @@ async def submit_worker_report(report: dict):
         return {"message": "Сводка успешно отправлена!"}
     except Exception as e:
         return {"message": f"Ошибка при сохранении: {str(e)}"}
+
 
     user = await get_user_by_username(username)
     if not user or not verify_password_plain_or_hash(password, user):
