@@ -7,3 +7,5 @@ pandas
 openpyxl
 supabase
 bcrypt==4.0.1
+itsdangerous
+sqlalchemy
