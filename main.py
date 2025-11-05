@@ -155,16 +155,13 @@ async def login_worker_form():
     """
 
 @app.post("/login_dispatcher")
-async def login_dispatcher_post(request: Request):
-    form = await request.form()
-    username = form.get("username")
-    password = form.get("password")
+async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
     user = await get_user_by_username(username)
-    if not user or not verify_password_plain_or_hash(password, user["password"]):
+    if not user or not verify_password_plain_or_hash(password, user["password_hash"]):
         return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
-    response = RedirectResponse(url="/dispatcher", status_code=303)
+    role = user.get("role", "dispatcher")
     response.set_cookie(key="username", value=username)
-    return response
+    return make_auth_response("/dispatcher", username, role)
 
 
 # 👇 вот здесь вставь этот код — строго без лишних пробелов перед @
