@@ -98,7 +98,6 @@ from fastapi.responses import HTMLResponse
 @app.get("/login_worker", response_class=HTMLResponse)
 async def login_worker(request: Request):
     return templates.TemplateResponse("login_worker.html", {"request": request})
-    <html>
     <head>
         <title>Вход буровика</title>
         <link rel="stylesheet" href="/static/style.css">
