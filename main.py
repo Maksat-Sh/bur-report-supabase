@@ -161,7 +161,6 @@ async def login_dispatcher_post(
     password: str = Form(...)
 ):
     @app.post("/login_dispatcher")
-async def login_dispatcher_post(request: Request):
     form = await request.form()
     username = form.get("username")
     password = form.get("password")
