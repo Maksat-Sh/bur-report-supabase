@@ -227,6 +227,28 @@ async def export_excel(request: Request):
     df.to_excel(filename, index=False)
     from fastapi.responses import FileResponse
     return FileResponse(filename, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="Сводка.xlsx")
+# === Авторизация диспетчера ===
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password_plain_or_hash(plain_password, hashed_password):
+    try:
+        if hashed_password and hashed_password.startswith("$2b$"):
+            return pwd_context.verify(plain_password, hashed_password)
+        return plain_password == hashed_password
+    except Exception:
+        return False
+
+@app.post("/login_dispatcher")
+async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    user = await get_user_by_username(username)
+    if not user or not verify_password_plain_or_hash(password, user["password_hash"]):
+        return templates.TemplateResponse(
+            "login_dispatcher.html",
+            {"request": request, "error": "Неверный логин или пароль"}
+        )
+    role = user.get("role", "dispatcher")
+    return make_auth_response("/dispatcher", username, role)
 
 
 # === Форма буровика ===
