@@ -1,229 +1,120 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from passlib.context import CryptContext
-from passlib.hash import bcrypt
-import pandas as pd
-from pydantic import BaseModel
-import os
-from datetime import datetime
+from fastapi.templating import Jinja2Templates
 from supabase import create_client, Client
+import pandas as pd
+import io
+from starlette.middleware.sessions import SessionMiddleware
 
-# === Настройки Supabase ===
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://your-url.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-anon-key")
+app = FastAPI()
+
+# --- Настройки Supabase ---
+SUPABASE_URL = "https://ваш-url.supabase.co"  # вставь свой URL
+SUPABASE_KEY = "ваш-service-role-key"         # вставь свой service_role
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# === Настройки FastAPI ===
-app = FastAPI()
+# --- Настройки сессий ---
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+
+# --- Подключаем статику и шаблоны ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# === Модели ===
-class Report(BaseModel):
-    date: str
-    time: str
-    location: str
-    rig_number: str
-    meterage: float
-    pogonometr: float
-    notes: str
-
-# === Вспомогательные функции ===
-async def get_user_by_username(username: str):
-    res = supabase.table("users").select("*").eq("username", username).execute()
-    users = res.data
-    return users[0] if users else None
-
-
-def verify_password_plain_or_hash(plain_password: str, stored_user):
-    """Проверяет пароль — поддерживает bcrypt и открытый текст"""
-    if isinstance(stored_user, str):
-        # если по ошибке передали строку, просто сравни напрямую
-        return plain_password == stored_user
-    if not stored_user:
-        return False
-    ph = stored_user.get("password_hash") or stored_user.get("password")
-    if not ph:
-        return False
-    try:
-        if ph.startswith("$2b$"):  # bcrypt
-            return pwd_context.verify(plain_password, ph)
-        return plain_password == ph
-    except Exception:
-        return False
-
-
-def make_auth_response(url, username, role):
-    response = RedirectResponse(url=url, status_code=303)
-    response.set_cookie("auth_user", username)
-    response.set_cookie("auth_role", role)
-    return response
-
-
-def require_role(request: Request, roles: list[str]):
-    role = request.cookies.get("auth_role")
-    username = request.cookies.get("auth_user")
-    if not role or role not in roles:
-        return None
-    return {"username": username, "role": role}
-
-
-async def supabase_get(table, params=None):
-    query = supabase.table(table).select("*")
-    if params and "select" in params:
-        query = supabase.table(table).select(params["select"])
-    res = query.execute()
-    return res.data
-
-
-# === Роуты ===
-
+# ---------- Главная ----------
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/login_dispatcher")
 
 
-# === Логин диспетчера ===
+# ---------- Авторизация диспетчера ----------
 @app.get("/login_dispatcher", response_class=HTMLResponse)
-async def login_dispatcher_get(request: Request):
+async def login_dispatcher(request: Request):
     return templates.TemplateResponse("login_dispatcher.html", {"request": request})
 
-from fastapi.responses import HTMLResponse
 
-# --- Страница входа буровика ---
+@app.post("/login_dispatcher", response_class=HTMLResponse)
+async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    if username == "admin" and password == "1234":
+        request.session["logged_in"] = True
+        return RedirectResponse("/dispatcher", status_code=303)
+    return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
+
+
+# ---------- Страница диспетчера ----------
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    if not request.session.get("logged_in"):
+        return RedirectResponse("/login_dispatcher")
+
+    try:
+        response = supabase.table("reports").select("*").execute()
+        reports = response.data or []
+    except Exception as e:
+        reports = []
+        print("Ошибка при загрузке данных:", e)
+
+    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
+
+
+# ---------- Экспорт в Excel ----------
+@app.get("/export_excel")
+async def export_excel():
+    try:
+        response = supabase.table("reports").select("*").execute()
+        data = response.data or []
+
+        df = pd.DataFrame(data)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Отчеты")
+
+        output.seek(0)
+        return FileResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="reports.xlsx",
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------- Форма буровика ----------
 @app.get("/login_worker", response_class=HTMLResponse)
 async def login_worker(request: Request):
-    return templates.TemplateResponse("login_worker.html", {"request": request})
- 
-   
-
-@app.post("/login_dispatcher")
-async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    user = await get_user_by_username(username)
-    if not user or not verify_password_plain_or_hash(password, user["password_hash"]):
-        return templates.TemplateResponse("login_dispatcher.html", {"request": request, "error": "Неверный логин или пароль"})
-    role = user.get("role", "dispatcher")
-    response.set_cookie(key="username", value=username)
-    return make_auth_response("/dispatcher", username, role)
+    return templates.TemplateResponse("worker_form.html", {"request": request})
 
 
-# 👇 вот здесь вставь этот код — строго без лишних пробелов перед @
-from datetime import datetime
-
+# ---------- Отправка отчёта буровиком ----------
 @app.post("/submit_worker_report")
-async def submit_worker_report(report: dict):
+async def submit_worker_report(
+    date: str = Form(...),
+    time: str = Form(...),
+    location: str = Form(...),
+    drill_number: str = Form(...),
+    meterage: float = Form(...),
+    footage: float = Form(...),
+    note: str = Form(None)
+):
     try:
         data = {
-            "site": report["site"],
-            "rig_number": report["rig_number"],
-            "footage": report["footage"],
-            "pogon": report["pogon"],
-            "note": report.get("note", ""),
-            "created_at": datetime.utcnow().isoformat()
+            "date": date,
+            "time": time,
+            "location": location,
+            "drill_number": drill_number,
+            "meterage": meterage,
+            "footage": footage,
+            "note": note
         }
         supabase.table("reports").insert(data).execute()
-        return {"message": "Сводка успешно отправлена!"}
+        return {"message": "Отчёт успешно сохранён!"}
     except Exception as e:
         return {"message": f"Ошибка при сохранении: {str(e)}"}
 
 
-    user = await get_user_by_username(username)
-    if not user or not verify_password_plain_or_hash(password, user):
-        return templates.TemplateResponse(
-            "login_dispatcher.html",
-            {"request": request, "error": "Неверный логин или пароль"}
-        )
-
-    role = user.get("role", "dispatcher")
-    return make_auth_response("/dispatcher", username, role)
-
-
-# === Страница диспетчера ===
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request):
-    auth = require_role(request, ["dispatcher", "admin"])
-    if not auth:
-        return RedirectResponse("/login_dispatcher")
-
-    reports = await supabase_get("reports")
-    try:
-        reports_sorted = sorted(reports, key=lambda r: r.get("created_at") or "", reverse=True)
-    except Exception:
-        reports_sorted = reports
-
-    return templates.TemplateResponse(
-        "dispatcher.html",
-        {"request": request, "user": auth["username"], "reports": reports_sorted}
-    )
-
-
-# === Экспорт в Excel ===
-@app.get("/export_excel")
-async def export_excel(request: Request):
-    auth = require_role(request, ["dispatcher", "admin"])
-    if not auth:
-        return RedirectResponse("/login_dispatcher")
-
-    reports = await supabase_get("reports")
-    df = pd.DataFrame(reports)
-    filename = "/tmp/reports.xlsx"
-    df.to_excel(filename, index=False)
-    from fastapi.responses import FileResponse
-    return FileResponse(filename, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="Сводка.xlsx")
-# === Авторизация диспетчера ===
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def verify_password_plain_or_hash(plain_password, hashed_password):
-    try:
-        if hashed_password and hashed_password.startswith("$2b$"):
-            return pwd_context.verify(plain_password, hashed_password)
-        return plain_password == hashed_password
-    except Exception:
-        return False
-
-@app.post("/login_dispatcher")
-async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    user = await get_user_by_username(username)
-    if not user or not verify_password_plain_or_hash(password, user["password_hash"]):
-        return templates.TemplateResponse(
-            "login_dispatcher.html",
-            {"request": request, "error": "Неверный логин или пароль"}
-        )
-    role = user.get("role", "dispatcher")
-    return make_auth_response("/dispatcher", username, role)
-
-
-# === Форма буровика ===
-@app.get("/form", response_class=HTMLResponse)
-async def form_page(request: Request):
-    return templates.TemplateResponse("form.html", {"request": request})
-
-
-@app.post("/submit")
-async def submit_form(
-    request: Request,
-    date: str = Form(...),
-    time: str = Form(...),
-    location: str = Form(...),
-    rig_number: str = Form(...),
-    meterage: float = Form(...),
-    pogonometr: float = Form(...),
-    notes: str = Form(...)
-):
-    report = {
-        "date": date,
-        "time": time,
-        "location": location,
-        "rig_number": rig_number,
-        "meterage": meterage,
-        "pogonometr": pogonometr,
-        "notes": notes,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    supabase.table("reports").insert(report).execute()
-    return RedirectResponse("/form", status_code=303)
+# ---------- Выход диспетчера ----------
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login_dispatcher", status_code=303)
