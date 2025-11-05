@@ -1,47 +1,30 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <title>Диспетчер</title>
-  <link rel="stylesheet" href="/static/style.css" />
+    <meta charset="UTF-8">
+    <title>Панель диспетчера</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Диспетчер — {{ user }}</h1>
-    <p><a href="/logout">Выйти</a> — <a href="/export_excel">Экспорт в Excel</a> — <a href="/form">Форма буровика</a></p>
-
-    <table class="reports-table">
-      <thead>
+    <h2>Сводка буровиков</h2>
+    <a href="/export_excel">📥 Экспорт в Excel</a> | 
+    <a href="/logout">Выйти</a>
+    <table border="1" cellpadding="5">
         <tr>
-          <th>ID</th>
-          <th>Дата/Время</th>
-          <th>Участок</th>
-          <th>Буровая</th>
-          <th>Метраж</th>
-          <th>Погонометр</th>
-          <th>Буровик</th>
-          <th>Тип операции</th>
-          <th>Примечание</th>
+            <th>ID</th><th>Дата</th><th>Время</th><th>Участок</th><th>Буровая</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th>
         </tr>
-      </thead>
-      <tbody>
         {% for r in reports %}
         <tr>
-          <td>{{ r.id }}</td>
-          <td>{{ r.created_at or "" }}</td>
-          <td>{{ r.location or "" }}</td>
-          <td>{{ r.rig_number or "" }}</td>
-          <td>{{ r.meterage or "" }}</td>
-          <td>{{ r.pogon or "" }}</td>
-          <td>{{ r.operator_name or "" }}</td>
-          <td>{{ r.operation_type or "" }}</td>
-          <td>{{ r.note or "" }}</td>
+            <td>{{ r.id }}</td>
+            <td>{{ r.date }}</td>
+            <td>{{ r.time }}</td>
+            <td>{{ r.location }}</td>
+            <td>{{ r.drill_number }}</td>
+            <td>{{ r.meterage }}</td>
+            <td>{{ r.footage }}</td>
+            <td>{{ r.note }}</td>
         </tr>
-        {% else %}
-        <tr><td colspan="9">Нет записей</td></tr>
         {% endfor %}
-      </tbody>
     </table>
-  </div>
 </body>
 </html>
