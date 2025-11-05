@@ -1,23 +1,56 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>Вход - Буровик</title>
-  <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body>
-  <div class="container">
-    <h1>Вход — Буровик</h1>
-    {% if error %}
-      <div class="error">{{ error }}</div>
-    {% endif %}
-    <form action="/login_worker" method="post" class="form">
-      <label>Логин<br/><input name="username" required/></label>
-      <label>Пароль<br/><input name="password" type="password" required/></label>
-      <button type="submit">Войти</button>
-    </form>
-    <p><a href="/login_dispatcher">Вход диспетчера</a></p>
-  </div>
-</body>
-</html>
+   <head>
+        <title>Вход буровика</title>
+        <link rel="stylesheet" href="/static/style.css">
+    </head>
+    <body>
+        <h2>Форма буровика</h2>
+        <form id="workerForm">
+            <label>Участок:</label><br>
+            <input type="text" id="site" required><br><br>
+            
+            <label>Номер буровой установки:</label><br>
+            <input type="text" id="rig_number" required><br><br>
+            
+            <label>Метраж:</label><br>
+            <input type="number" id="footage" required><br><br>
+            
+            <label>Погонометр:</label><br>
+            <input type="number" id="pogon" required><br><br>
+            
+            <label>Примечание:</label><br>
+            <textarea id="note"></textarea><br><br>
+            
+            <button type="submit">Отправить сводку</button>
+        </form>
+        <p id="message" style="color:green;"></p>
+
+        <script>
+        document.getElementById("workerForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const data = {
+                site: document.getElementById("site").value,
+                rig_number: document.getElementById("rig_number").value,
+                footage: document.getElementById("footage").value,
+                pogon: document.getElementById("pogon").value,
+                note: document.getElementById("note").value
+            };
+
+            const res = await fetch("/submit_worker_report", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(data)
+            });
+
+            const result = await res.json();
+            document.getElementById("message").textContent = result.message;
+
+            if (res.ok) {
+                document.getElementById("workerForm").reset();
+            }
+        });
+        </script>
+    </body>
+    </html>
 
