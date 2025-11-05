@@ -96,8 +96,8 @@ from fastapi.responses import HTMLResponse
 
 # --- Страница входа буровика ---
 @app.get("/login_worker", response_class=HTMLResponse)
-async def login_worker_form():
-    return """
+async def login_worker(request: Request):
+    return templates.TemplateResponse("login_worker.html", {"request": request})
     <html>
     <head>
         <title>Вход буровика</title>
