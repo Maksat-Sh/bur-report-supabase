@@ -98,59 +98,7 @@ from fastapi.responses import HTMLResponse
 @app.get("/login_worker", response_class=HTMLResponse)
 async def login_worker(request: Request):
     return templates.TemplateResponse("login_worker.html", {"request": request})
-    <head>
-        <title>Вход буровика</title>
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <h2>Форма буровика</h2>
-        <form id="workerForm">
-            <label>Участок:</label><br>
-            <input type="text" id="site" required><br><br>
-            
-            <label>Номер буровой установки:</label><br>
-            <input type="text" id="rig_number" required><br><br>
-            
-            <label>Метраж:</label><br>
-            <input type="number" id="footage" required><br><br>
-            
-            <label>Погонометр:</label><br>
-            <input type="number" id="pogon" required><br><br>
-            
-            <label>Примечание:</label><br>
-            <textarea id="note"></textarea><br><br>
-            
-            <button type="submit">Отправить сводку</button>
-        </form>
-        <p id="message" style="color:green;"></p>
-
-        <script>
-        document.getElementById("workerForm").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const data = {
-                site: document.getElementById("site").value,
-                rig_number: document.getElementById("rig_number").value,
-                footage: document.getElementById("footage").value,
-                pogon: document.getElementById("pogon").value,
-                note: document.getElementById("note").value
-            };
-
-            const res = await fetch("/submit_worker_report", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(data)
-            });
-
-            const result = await res.json();
-            document.getElementById("message").textContent = result.message;
-
-            if (res.ok) {
-                document.getElementById("workerForm").reset();
-            }
-        });
-        </script>
-    </body>
-    </html>
+ 
    
 
 @app.post("/login_dispatcher")
