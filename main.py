@@ -152,7 +152,7 @@ async def login_worker(request: Request):
         </script>
     </body>
     </html>
-    """
+   
 
 @app.post("/login_dispatcher")
 async def login_dispatcher_post(request: Request, username: str = Form(...), password: str = Form(...)):
