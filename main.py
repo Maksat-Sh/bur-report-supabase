@@ -11,8 +11,8 @@ from starlette.middleware.sessions import SessionMiddleware
 app = FastAPI()
 
 # --- Настройки Supabase ---
-SUPABASE_URL = "https://ваш-url.supabase.co"  # вставь свой URL
-SUPABASE_KEY = "ваш-service-role-key"         # вставь свой service_role
+SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"  # вставь свой URL
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3OTUxMjMsImV4cCI6MjA3MjM3MTEyM30.8vsXFCdhgyTi6yJW1DXJOyvjuqoWJmivGCNYFN5dNv8"         # вставь свой service_role
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 engine = create_engine(
