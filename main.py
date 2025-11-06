@@ -16,10 +16,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL") or "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
-engine = create_engine(
-    SUPABASE_URL,
-    encoding="utf-8"
-)
+engine = create_engine(SUPABASE_URL)
 app = FastAPI()
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
