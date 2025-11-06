@@ -9,3 +9,4 @@ supabase
 bcrypt==4.0.1
 itsdangerous
 sqlalchemy
+# updated for Render deploy
