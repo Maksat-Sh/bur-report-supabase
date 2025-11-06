@@ -16,7 +16,6 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 engine = create_engine(
-    DATABASE_URL,
     connect_args={"options": "-c client_encoding=utf8"},
     echo=False,
     encoding="utf-8"
