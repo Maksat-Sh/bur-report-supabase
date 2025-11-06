@@ -18,8 +18,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SUPABASE_URL = os.getenv("SUPABASE_URL") or "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
 engine = create_engine(
     SUPABASE_URL,
-    connect_args={"options": "-c client_encoding=utf8"},
-    echo=False,
     encoding="utf-8"
 )
 app = FastAPI()
