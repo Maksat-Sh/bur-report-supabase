@@ -21,6 +21,12 @@ app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"options": "-c client_encoding=utf8"},
+    echo=False,
+    encoding="utf-8"
+)
 
 # ---------- Главная ----------
 @app.get("/", response_class=HTMLResponse)
