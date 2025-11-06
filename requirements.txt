@@ -9,4 +9,5 @@ supabase
 bcrypt==4.0.1
 itsdangerous
 sqlalchemy
+psycopg2
 # updated for Render deploy
