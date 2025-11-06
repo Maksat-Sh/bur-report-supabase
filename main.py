@@ -7,8 +7,8 @@ from supabase import create_client, Client
 import pandas as pd
 import io
 from starlette.middleware.sessions import SessionMiddleware
-
-
+import os
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- Настройки Supabase ---
 SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"  # вставь свой URL
@@ -27,6 +27,13 @@ SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 # --- Настройки сессий ---
 app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+# Разрешаем CORS (чтобы фронт мог подключаться)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 
 # --- Подключаем статику и шаблоны ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
