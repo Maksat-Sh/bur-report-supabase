@@ -131,8 +131,8 @@ async def submit_worker_report(
 ):
     try:
         data = {
-            "date": date,
-            "time": time,
+            "timestamp": datetime.now().isoformat(),
+            "site": site,
             "location": location,
             "drill_number": drill_number,
             "meterage": meterage,
