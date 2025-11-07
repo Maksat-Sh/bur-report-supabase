@@ -74,24 +74,42 @@ async def dispatcher_page(request: Request):
 
 # ---------- Экспорт в Excel ----------
 @app.get("/export_excel")
-async def export_excel():
-    try:
-        response = supabase.table("reports").select("*").execute()
-        data = response.data or []
+def export_excel():
+    import pandas as pd
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
 
-        df = pd.DataFrame(data)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Отчеты")
+    db = SessionLocal()
+    reports = db.query(Report).all()
 
-        output.seek(0)
-        return FileResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename="reports.xlsx",
-        )
-    except Exception as e:
-        return {"error": str(e)}
+    if not reports:
+        return JSONResponse({"message": "Нет данных для экспорта"})
+
+    df = pd.DataFrame([{
+        "Дата и время": r.timestamp.strftime("%Y-%m-%d %H:%M"),
+        "Участок": r.site,
+        "Буровая": r.rig_number,
+        "Метраж": r.meterage,
+        "Погонометр": r.footage,
+        "Примечание": r.note
+    } for r in reports])
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Сводка")
+
+    output.seek(0)
+
+    headers = {
+        "Content-Disposition": 'attachment; filename="svodka.xlsx"'
+    }
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers
+    )
+
 
 
 # ---------- Форма буровика ----------
