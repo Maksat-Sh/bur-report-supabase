@@ -5,7 +5,9 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from datetime import datetime
+from datetime import datetime, timedelta
+# Казахстан UTC+6, если у вас UTC+5 — поставьте +5
+timestamp = datetime.utcnow() + timedelta(hours=6)
 import io
 from openpyxl import Workbook
 import hashlib
@@ -118,7 +120,7 @@ def submit_worker_report(request: Request,
         return RedirectResponse("/login")
     db = SessionLocal()
     try:
-        r = Report(date=datetime.utcnow(), site=site, rig_number=rig_number, meterage=meterage, pogonometr=pogonometr, operation=operation, author=user.get("username"), note=note)
+        r = Report(date=datetime.utcnow(), site=site, rig_number=rig_number, meterage=meterage, pogonometr=pogonometr, operation=operation, author=user.get("fullname"), note=note)
         db.add(r)
         db.commit()
         return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": ["Участок A","Участок B","Участок C"], "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "success": "Отчёт сохранён"})
