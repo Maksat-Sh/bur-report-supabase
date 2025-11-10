@@ -6,13 +6,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime, timedelta
-# Казахстан UTC+6, если у вас UTC+5 — поставьте +5
-timestamp = datetime.utcnow() + timedelta(hours=6)
 import io
 from openpyxl import Workbook
 import hashlib
 import os
-
+def now_kz():
+    return datetime.utcnow() + timedelta(hours=6)
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change")
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -41,7 +40,7 @@ class User(Base):
 class Report(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(DateTime, default=datetime.utcnow)
+    date = Column(DateTime, default=now_kz)
     site = Column(String)
     rig_number = Column(String)
     meterage = Column(Float)
@@ -120,7 +119,7 @@ def submit_worker_report(request: Request,
         return RedirectResponse("/login")
     db = SessionLocal()
     try:
-        r = Report(date=datetime.utcnow(), site=site, rig_number=rig_number, meterage=meterage, pogonometr=pogonometr, operation=operation, author=user.get("fullname"), note=note)
+        r = Report(date=datetime.utcnow(), site=site, rig_number=rig_number, meterage=meterage, pogonometr=pogonometr, operation=operation, author=user.get("full_name"), note=note)
         db.add(r)
         db.commit()
         return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": ["Участок A","Участок B","Участок C"], "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "success": "Отчёт сохранён"})
