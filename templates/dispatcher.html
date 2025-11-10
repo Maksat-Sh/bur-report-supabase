@@ -1,30 +1,41 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Панель диспетчера</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <h2>Сводка буровиков</h2>
-    <a href="/export_excel">📥 Экспорт в Excel</a> | 
-    <a href="/logout">Выйти</a>
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>ID</th><th>Дата</th><th>Время</th><th>Участок</th><th>Буровая</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th>
-        </tr>
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
+  <body>
+    <div class="card">
+      <h1>Интерфейс диспетчера</h1>
+      <p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
+      <div class="top-controls">
+        <form method="get" action="/dispatcher" class="inline">
+          <select name="site">
+            {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s or "Все" }}</option>{% endfor %}
+          </select>
+          <button type="submit">Фильтр</button>
+        </form>
+        <form method="get" action="/export_excel" style="display:inline">
+          <input type="hidden" name="site" value="{{ selected_site }}">
+          <button type="submit">Сформировать в Excel</button>
+        </form>
+        <a href="/users"><button>Пользователи</button></a>
+      </div>
+      <table>
+        <thead><tr><th>ID</th><th>Дата</th><th>Участок</th><th>Агрегат</th><th>Метраж</th><th>Пог.</th><th>Операция</th><th>Автор</th><th>Примечание</th></tr></thead>
+        <tbody>
         {% for r in reports %}
-        <tr>
+          <tr>
             <td>{{ r.id }}</td>
-            <td>{{ r.date }}</td>
-            <td>{{ r.time }}</td>
-            <td>{{ r.location }}</td>
-            <td>{{ r.drill_number }}</td>
+            <td>{{ r.date.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+            <td>{{ r.site }}</td>
+            <td>{{ r.rig_number }}</td>
             <td>{{ r.meterage }}</td>
-            <td>{{ r.footage }}</td>
+            <td>{{ r.pogonometr }}</td>
+            <td>{{ r.operation }}</td>
+            <td>{{ r.author }}</td>
             <td>{{ r.note }}</td>
-        </tr>
+          </tr>
         {% endfor %}
-    </table>
-</body>
+        </tbody>
+      </table>
+    </div>
+  </body>
 </html>

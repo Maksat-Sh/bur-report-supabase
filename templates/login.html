@@ -1,4 +1,16 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Login</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><div class="container"><h2>Вход</h2>{% if error %}<p class="error">{{ error }}</p>{% endif %}<form method="post" action="/login"><label>Логин</label><input name="username" required><label>Пароль</label><input name="password" type="password" required><button type="submit">Войти</button></form></div></body></html>
+  <head><meta charset="utf-8"><title>Login</title><link rel="stylesheet" href="/static/style.css"></head>
+  <body>
+    <div class="card">
+      <h1>Вход</h1>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post" action="/login">
+        <label>Логин <input name="username" required></label>
+        <label>Пароль <input name="password" type="password" required></label>
+        <button type="submit">Войти</button>
+      </form>
+      <p>По умолчанию диспетчер: dispatcher / dispatcher</p>
+    </div>
+  </body>
+</html>

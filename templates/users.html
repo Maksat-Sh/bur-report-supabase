@@ -1,1 +1,42 @@
-<html><body>users</body></html>
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>Пользователи</title><link rel="stylesheet" href="/static/style.css"></head>
+  <body>
+    <div class="card">
+      <h1>Пользователи</h1>
+      <p><a href="/dispatcher">Назад</a> | <a href="/logout">Выйти</a></p>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <h2>Создать пользователя</h2>
+      <form method="post" action="/create_user">
+        <label>Логин: <input name="username" required></label>
+        <label>ФИО: <input name="full_name"></label>
+        <label>Пароль: <input name="password" required></label>
+        <label>Роль:
+          <select name="role">
+            <option value="worker">Буровик</option>
+            <option value="dispatcher">Диспетчер</option>
+          </select>
+        </label>
+        <label>Участок (для буровика):
+          <select name="site">
+            <option value="">--</option>
+            <option>Участок A</option>
+            <option>Участок B</option>
+            <option>Участок C</option>
+          </select>
+        </label>
+        <button type="submit">Создать</button>
+      </form>
+
+      <h2>Список пользователей</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Участок</th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.role }}</td><td>{{ u.site }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
