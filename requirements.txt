@@ -2,6 +2,7 @@ fastapi
 uvicorn
 jinja2
 sqlalchemy
-pydantic
+psycopg2-binary
 python-multipart
+itsdangerous
 openpyxl
