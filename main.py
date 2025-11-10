@@ -104,7 +104,7 @@ def worker_form(request: Request):
         return RedirectResponse("/login")
     # possible sites (could be read from DB or config); simple list for dropdown
     sites = ["Хорасан", "Заречное", "Карамурын", "Ирколь", "Степногорск"]
-    return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": sites, "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")})
+    return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": ["Хорасан", "Заречное", "Карамурын", "Ирколь", "Степногорск"], "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")})
 
 @app.post("/submit_worker_report")
 def submit_worker_report(request: Request,
