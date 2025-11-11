@@ -3,8 +3,9 @@
   <head><meta charset="utf-8"><title>Пользователи</title><link rel="stylesheet" href="/static/style.css"></head>
   <body>
     <div class="card">
-      <h1>Пользователи</h1>
-      <p><a href="/dispatcher">Назад</a> | <a href="/logout">Выйти</a></p>
+      <h1>Управление пользователями</h1>
+      <p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
+
       {% if error %}<div class="error">{{ error }}</div>{% endif %}
       <h2>Создать пользователя</h2>
       <form method="post" action="/create_user">
@@ -17,26 +18,25 @@
             <option value="dispatcher">Диспетчер</option>
           </select>
         </label>
-       <label>Участок:</label>
-<select name="area" required>
-    <option value="Хорасан">Хорасан</option>
-    <option value="Заречное">Заречное</option>
-    <option value="Карамурын">Карамурын</option>
-    <option value="Ирколь">Ирколь</option>
-    <option value="Степногорск">Степногорск</option>
-</select>
+        <label>Участок:
+          <select name="site">
+            <option value="">-- не указан --</option>
+            {% for s in sites %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </label>
         <button type="submit">Создать</button>
       </form>
 
-      <h2>Список пользователей</h2>
+      <h2>Существующие</h2>
       <table>
         <thead><tr><th>ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Участок</th></tr></thead>
         <tbody>
-        {% for u in users %}
-          <tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.role }}</td><td>{{ u.site }}</td></tr>
-        {% endfor %}
+          {% for u in users %}
+            <tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.role }}</td><td>{{ u.site }}</td></tr>
+          {% endfor %}
         </tbody>
       </table>
+      <p><a href="/dispatcher">Назад</a></p>
     </div>
   </body>
 </html>
