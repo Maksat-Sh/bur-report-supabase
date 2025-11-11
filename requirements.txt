@@ -1,8 +1,8 @@
 fastapi
-uvicorn
+uvicorn[standard]
 jinja2
 sqlalchemy
 psycopg2-binary
 python-multipart
-itsdangerous
 openpyxl
+itsdangerous
