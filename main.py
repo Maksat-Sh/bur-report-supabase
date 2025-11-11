@@ -5,29 +5,43 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import io
 from openpyxl import Workbook
 import hashlib
 import os
-def now_kz():
-    return datetime.utcnow() + timedelta(hours=6)
+import urllib.parse
+
+# --- Настройки ---
+# Ожидается, что в переменных окружения задан SUPABASE_URL, например:
+# postgresql://postgres:SECRET_PASSWORD@db....supabase.co:5432/postgres
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+if not SUPABASE_URL:
+    raise RuntimeError("Не задана переменная окружения SUPABASE_URL (строка подключения к Postgres Supabase).")
+
+# Часовой пояс отображения (UTC+5)
+DISPLAY_TZ_OFFSET = 5  # целое число часов
+
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change")
+
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# SQLite local DB
-DATABASE_URL = "sqlite:///./reports.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# --- SQLAlchemy ---
+# Для Postgres: передаём SUPABASE_URL напрямую
+DATABASE_URL = SUPABASE_URL
+# Добавим параметр client_encoding через query, если нужно (обычно не нужно).
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
+# --- Модели ---
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -40,34 +54,52 @@ class User(Base):
 class Report(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(DateTime, default=now_kz)
+    date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     site = Column(String)
     rig_number = Column(String)
     meterage = Column(Float)
     pogonometr = Column(Float)
     operation = Column(String)
-    author = Column(String)
+    author = Column(String)   # username
     note = Column(Text)
 
+# Создаем таблицы (если ещё не созданы)
 Base.metadata.create_all(bind=engine)
 
-# Create a default dispatcher if none exists
+# --- Участки (единый список) ---
+SITES = ["Хорасан", "Заречное", "Карамурын", "Ирколь", "Степногорск"]
+
+# --- Утилиты ---
+def get_current_user(request: Request):
+    return request.session.get("user")
+
+def utc_to_display(dt_utc: datetime) -> str:
+    if dt_utc is None:
+        return ""
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+    disp = dt_utc.astimezone(timezone(timedelta(hours=DISPLAY_TZ_OFFSET)))
+    return disp.strftime("%Y-%m-%d %H:%M:%S")
+
+# --- Создание дефолтного диспетчера, если нет ---
 def ensure_default_dispatcher():
     db = SessionLocal()
     try:
         if not db.query(User).filter_by(username="dispatcher").first():
-            u = User(username="dispatcher", full_name="Главный Диспетчер", password_hash=hash_password("dispatcher"), role="dispatcher")
-            db.add(u)
-            db.commit()
+            u = User(
+                username="dispatcher",
+                full_name="Главный Диспетчер",
+                password_hash=hash_password("dispatcher"),
+                role="dispatcher",
+                site=None
+            )
+            db.add(u); db.commit()
     finally:
         db.close()
 
 ensure_default_dispatcher()
 
-def get_current_user(request: Request):
-    user = request.session.get("user")
-    return user
-
+# --- Роуты ---
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
     return RedirectResponse("/login")
@@ -102,11 +134,10 @@ def worker_form(request: Request):
     user = get_current_user(request)
     if not user or user.get("role") != "worker":
         return RedirectResponse("/login")
-    # possible sites (could be read from DB or config); simple list for dropdown
-    sites = ["Хорасан", "Заречное", "Карамурын", "Ирколь", "Степногорск"]
-    return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": ["Хорасан", "Заречное", "Карамурын", "Ирколь", "Степногорск"], "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")})
+    now_display = (datetime.now(timezone.utc)).astimezone(timezone(timedelta(hours=DISPLAY_TZ_OFFSET))).strftime("%Y-%m-%d %H:%M:%S")
+    return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": SITES, "now": now_display})
 
-@app.post("/submit_worker_report")
+@app.post("/submit_worker_report", response_class=HTMLResponse)
 def submit_worker_report(request: Request,
                          site: str = Form(...),
                          rig_number: str = Form(...),
@@ -119,10 +150,15 @@ def submit_worker_report(request: Request,
         return RedirectResponse("/login")
     db = SessionLocal()
     try:
-        r = Report(date=datetime.utcnow(), site=site, rig_number=rig_number, meterage=meterage, pogonometr=pogonometr, operation=operation, author=user.get("full_name"), note=note)
+        # author сохраняем как username (логин)
+        author_username = user.get("username")
+        # сохраняем время в UTC
+        r = Report(date=datetime.now(timezone.utc), site=site, rig_number=rig_number,
+                   meterage=meterage, pogonometr=pogonometr, operation=operation, author=author_username, note=note)
         db.add(r)
         db.commit()
-        return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": ["Участок A","Участок B","Участок C"], "now": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "success": "Отчёт сохранён"})
+        now_display = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=DISPLAY_TZ_OFFSET))).strftime("%Y-%m-%d %H:%M:%S")
+        return templates.TemplateResponse("worker_form.html", {"request": request, "user": user, "sites": SITES, "now": now_display, "success": "Отчёт сохранён"})
     finally:
         db.close()
 
@@ -137,8 +173,26 @@ def dispatcher_view(request: Request, site: str = None):
         if site:
             query = query.filter(Report.site == site)
         reports = query.all()
-        sites = ["", "Участок A", "Участок B", "Участок C"]
-        return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports, "sites": sites, "selected_site": site or ""})
+        # преобразуем дату в DISPLAY_TZ и также достаём ФИО для отображения (по username)
+        # соберём map username->full_name
+        usernames = {r.author for r in reports if r.author}
+        users = db.query(User).filter(User.username.in_(list(usernames))).all() if usernames else []
+        name_map = {u.username: u.full_name for u in users}
+        display_reports = []
+        for r in reports:
+            display_reports.append({
+                "id": r.id,
+                "date": utc_to_display(r.date),
+                "site": r.site,
+                "rig_number": r.rig_number,
+                "meterage": r.meterage,
+                "pogonometr": r.pogonometr,
+                "operation": r.operation,
+                "author_username": r.author,
+                "author_full_name": name_map.get(r.author) or "",
+                "note": r.note or ""
+            })
+        return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": display_reports, "sites": [""] + SITES, "selected_site": site or ""})
     finally:
         db.close()
 
@@ -157,16 +211,19 @@ def export_excel(request: Request, site: str = None):
         wb = Workbook()
         ws = wb.active
         ws.title = "Reports"
-        ws.append(["ID","Дата","Участок","Номер агрегата","Метраж","Погонометр","Операция","Ответственный","Примечание"])
+        ws.append(["ID","Дата(UTC+5)","Участок","Номер агрегата","Метраж","Погонометр","Операция","Логин","ФИО","Примечание"])
         for r in reports:
-            ws.append([r.id, r.date.strftime("%Y-%m-%d %H:%M:%S"), r.site, r.rig_number, r.meterage, r.pogonometr, r.operation, r.author, r.note or ""])
+            author_full = ""
+            if r.author:
+                u = db.query(User).filter_by(username=r.author).first()
+                if u:
+                    author_full = u.full_name or ""
+            ws.append([r.id, utc_to_display(r.date), r.site, r.rig_number, r.meterage, r.pogonometr, r.operation, r.author, author_full, r.note or ""])
         stream = io.BytesIO()
         wb.save(stream)
         stream.seek(0)
         filename = f"reports_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
     finally:
         db.close()
@@ -179,8 +236,7 @@ def users_page(request: Request):
     db = SessionLocal()
     try:
         all_users = db.query(User).all()
-        sites = ["Участок A","Участок B","Участок C"]
-        return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": all_users, "sites": sites})
+        return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": all_users, "sites": SITES})
     finally:
         db.close()
 
@@ -192,8 +248,8 @@ def create_user(request: Request, username: str = Form(...), full_name: str = Fo
     db = SessionLocal()
     try:
         if db.query(User).filter_by(username=username).first():
-            return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": db.query(User).all(), "sites": ["Участок A","Участок B","Участок C"], "error": "Пользователь уже существует"})
-        u = User(username=username, full_name=full_name, password_hash=hashlib.sha256(password.encode('utf-8')).hexdigest(), role=role, site=site)
+            return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": db.query(User).all(), "sites": SITES, "error": "Пользователь уже существует"})
+        u = User(username=username, full_name=full_name, password_hash=hash_password(password), role=role, site=site)
         db.add(u)
         db.commit()
         return RedirectResponse("/users", status_code=303)
