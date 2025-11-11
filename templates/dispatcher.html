@@ -5,35 +5,37 @@
     <div class="card">
       <h1>Интерфейс диспетчера</h1>
       <p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
-      <div class="top-controls">
-        <form method="get" action="/dispatcher" class="inline">
+
+      <form method="get" action="/dispatcher">
+        <label>Фильтр по участку:
           <select name="site">
-            {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s or "Все" }}</option>{% endfor %}
+            {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s or "--- все ---" }}</option>{% endfor %}
           </select>
-          <button type="submit">Фильтр</button>
-        </form>
-        <form method="get" action="/export_excel" style="display:inline">
-          <input type="hidden" name="site" value="{{ selected_site }}">
-          <button type="submit">Сформировать в Excel</button>
-        </form>
-        <a href="/users"><button>Пользователи</button></a>
-      </div>
+        </label>
+        <button type="submit">Применить</button>
+        <a href="/export_excel{% if selected_site %}?site={{ selected_site }}{% endif %}"><button type="button">Сформировать в Excel</button></a>
+        <a href="/users"><button type="button">Пользователи</button></a>
+      </form>
+
       <table>
-        <thead><tr><th>ID</th><th>Дата</th><th>Участок</th><th>Агрегат</th><th>Метраж</th><th>Пог.</th><th>Операция</th><th>Автор</th><th>Примечание</th></tr></thead>
+        <thead>
+          <tr><th>ID</th><th>Дата(UTC+5)</th><th>Участок</th><th>Номер агрегата</th><th>Метраж</th><th>Погонометр</th><th>Операция</th><th>Логин</th><th>ФИО</th><th>Примечание</th></tr>
+        </thead>
         <tbody>
-        {% for r in reports %}
-          <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.date.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-            <td>{{ r.site }}</td>
-            <td>{{ r.rig_number }}</td>
-            <td>{{ r.meterage }}</td>
-            <td>{{ r.pogonometr }}</td>
-            <td>{{ r.operation }}</td>
-            <td>{{ r.author }}</td>
-            <td>{{ r.note }}</td>
-          </tr>
-        {% endfor %}
+          {% for r in reports %}
+            <tr>
+              <td>{{ r.id }}</td>
+              <td>{{ r.date }}</td>
+              <td>{{ r.site }}</td>
+              <td>{{ r.rig_number }}</td>
+              <td>{{ r.meterage }}</td>
+              <td>{{ r.pogonometr }}</td>
+              <td>{{ r.operation }}</td>
+              <td>{{ r.author_username }}</td>
+              <td>{{ r.author_full_name }}</td>
+              <td>{{ r.note }}</td>
+            </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>
