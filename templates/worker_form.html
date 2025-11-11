@@ -7,7 +7,7 @@
       <p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
       {% if success %}<div class="success">{{ success }}</div>{% endif %}
       <form method="post" action="/submit_worker_report">
-        <label>Дата и время: <input name="date" value="{{ now }}" readonly></label>
+        <label>Дата и время (UTC+5): <input name="date" value="{{ now }}" readonly></label>
         <label>Участок:
           <select name="site">
             {% for s in sites %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
