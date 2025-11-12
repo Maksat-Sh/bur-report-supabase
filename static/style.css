@@ -1,6 +1,9 @@
-body{font-family:Arial,Helvetica,sans-serif;background:#f2f4f7;margin:0;padding:20px}
-.card{max-width:980px;margin:20px auto;padding:20px;background:white;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
-label{display:block;margin:8px 0}input,select,textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
-button{background:#0b74de;color:white;padding:8px 12px;border:none;border-radius:6px;cursor:pointer}
-table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:8px;border:1px solid #eee;text-align:left}
-.top-controls{display:flex;gap:10px;align-items:center} .inline{display:inline-block} .error{background:#ffd6d6;padding:8px;border-radius:6px} .success{background:#d6ffd6;padding:8px;border-radius:6px}
+body{font-family: Arial, Helvetica, sans-serif; background:#f4f6f8; margin:0; padding:20px}
+.card{background:#fff; max-width:1000px; margin:10px auto; padding:20px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.08)}
+label{display:block;margin:8px 0}
+input, select, textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
+button{padding:8px 14px;border:none;background:#1976d2;color:#fff;border-radius:6px;cursor:pointer}
+table.reports{width:100%;border-collapse:collapse;margin-top:12px}
+table.reports th, table.reports td{border:1px solid #eee;padding:6px;text-align:left;font-size:14px}
+.error{background:#ffebee;color:#b71c1c;padding:8px;border-radius:6px}
+.success{background:#e8f5e9;color:#2e7d32;padding:8px;border-radius:6px}
