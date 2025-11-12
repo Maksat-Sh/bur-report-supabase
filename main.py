@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import io
 from openpyxl import Workbook
 import hashlib
+from passlib.context import CryptContext
 
 # Load env
 load_dotenv()
@@ -28,6 +29,17 @@ app.mount('/static', StaticFiles(directory='static'), name='static')
 
 # Supabase REST helpers (PostgREST)
 headers = {'apikey': SUPABASE_ANON_KEY, 'Authorization': f'Bearer {SUPABASE_ANON_KEY}', 'Content-Type': 'application/json'}
+# Настройка шифрования паролей
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Поддержка bcrypt и sha256"""
+    try:
+        if hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"):
+            return pwd_context.verify(plain_password, hashed_password)
+        return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+    except Exception:
+        return False
 
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode('utf-8')).hexdigest()
@@ -59,7 +71,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         user = r.json()[0]
         # Support storing plain 'password' or hashed 'password_hash' for backwards compatibility
         pw_hash = user.get('password_hash') or (hashlib.sha256(user.get('password','').encode()).hexdigest() if user.get('password') else None)
-        if pw_hash != hashlib.sha256(password.encode()).hexdigest():
+        if not verify_password(password, pw_hash):
             return templates.TemplateResponse('login.html', {'request': request, 'error': 'Неверный логин или пароль'})
         # store essential info
         request.session['user'] = {'username': user.get('username'), 'full_name': user.get('full_name') or user.get('fio') or user.get('username'), 'role': user.get('role') or 'worker', 'site': user.get('location') or user.get('site')}
