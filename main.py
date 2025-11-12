@@ -25,7 +25,8 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+
 
 # ==========================================
 # Вспомогательные функции
