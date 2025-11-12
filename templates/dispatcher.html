@@ -1,43 +1,28 @@
 <!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
-  <body>
-    <div class="card">
-      <h1>Интерфейс диспетчера</h1>
-      <p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
-
-      <form method="get" action="/dispatcher">
-        <label>Фильтр по участку:
-          <select name="site">
-            {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s or "--- все ---" }}</option>{% endfor %}
-          </select>
-        </label>
-        <button type="submit">Применить</button>
-        <a href="/export_excel{% if selected_site %}?site={{ selected_site }}{% endif %}"><button type="button">Сформировать в Excel</button></a>
-        <a href="/users"><button type="button">Пользователи</button></a>
-      </form>
-
-      <table>
-        <thead>
-          <tr><th>ID</th><th>Дата(UTC+5)</th><th>Участок</th><th>Номер агрегата</th><th>Метраж</th><th>Погонометр</th><th>Операция</th><th>Логин</th><th>ФИО</th><th>Примечание</th></tr>
-        </thead>
-        <tbody>
-          {% for r in reports %}
-            <tr>
-              <td>{{ r.id }}</td>
-              <td>{{ r.date }}</td>
-              <td>{{ r.site }}</td>
-              <td>{{ r.rig_number }}</td>
-              <td>{{ r.meterage }}</td>
-              <td>{{ r.pogonometr }}</td>
-              <td>{{ r.operation }}</td>
-              <td>{{ r.author_username }}</td>
-              <td>{{ r.author_full_name }}</td>
-              <td>{{ r.note }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </body>
-</html>
+<html><head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><div class="card"><h1>Диспетчер</h1>
+<p>Пользователь: {{ user.full_name or user.username }} (<a href="/logout">выйти</a>)</p>
+<form method="get" action="/dispatcher">
+  <label>Фильтр по участку:
+    <select name="section">
+      {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Применить</button>
+</form>
+<p><a href="/export_excel{% if selected_site %}?section={{ selected_site }}{% endif %}">Скачать в Excel</a> | <a href="/users">Пользователи</a></p>
+<table class="reports"><thead><tr><th>ID</th><th>Дата UTC</th><th>Участок</th><th>Номер</th><th>Метраж</th><th>Погонометр</th><th>Операция</th><th>Автор</th><th>Примечание</th></tr></thead><tbody>
+{% for r in reports %}
+  <tr>
+    <td>{{ r.id }}</td>
+    <td>{{ r.created_at or r.timestamp }}</td>
+    <td>{{ r.section }}</td>
+    <td>{{ r.rig_number }}</td>
+    <td>{{ r.meterage }}</td>
+    <td>{{ r.pogonometr }}</td>
+    <td>{{ r.operation_type }}</td>
+    <td>{{ r.operator_name }}</td>
+    <td>{{ r.note }}</td>
+  </tr>
+{% endfor %}
+</tbody></table></div></body></html>
