@@ -1,7 +1,7 @@
 fastapi
-jinja2
 uvicorn
 httpx
-python-dotenv
 openpyxl
-itsdangerous
+python-dotenv
+supabase
+python-multipart
