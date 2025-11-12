@@ -11,6 +11,7 @@ import io
 from openpyxl import Workbook
 import hashlib
 from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Load env
 load_dotenv()
@@ -70,9 +71,13 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             return templates.TemplateResponse('login.html', {'request': request, 'error': 'Неверный логин или пароль'})
         user = r.json()[0]
         # Support storing plain 'password' or hashed 'password_hash' for backwards compatibility
-        pw_hash = user.get('password_hash') or (hashlib.sha256(user.get('password','').encode()).hexdigest() if user.get('password') else None)
-        if not verify_password(password, pw_hash):
+       from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+...
+        pw_hash = user.get('password_hash')
+        if not pw_hash or not pwd_context.verify(password, pw_hash):
             return templates.TemplateResponse('login.html', {'request': request, 'error': 'Неверный логин или пароль'})
+
         # store essential info
         request.session['user'] = {'username': user.get('username'), 'full_name': user.get('full_name') or user.get('fio') or user.get('username'), 'role': user.get('role') or 'worker', 'site': user.get('location') or user.get('site')}
         if request.session['user']['role'] == 'dispatcher':
