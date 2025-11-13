@@ -30,6 +30,7 @@ def get_all_reports():
 # Настройки
 # ==========================================
 load_dotenv()
+conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "supersecret")
