@@ -102,8 +102,13 @@ async def submit_report(
 # === Интерфейс диспетчера ===
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher_page(request: Request):
-    if "user" not in request.session:
-        return RedirectResponse("/login")
+    reports = get_reports()
+    user = {"username": "dispatch"}
+    return templates.TemplateResponse(
+        "dispatcher.html",
+        {"request": request, "reports": reports, "user": user}
+    )
+
 
     reports = await supabase_request("GET", "", params={"select": "*", "order": "id.desc"})
     return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
