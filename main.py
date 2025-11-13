@@ -6,124 +6,59 @@ from starlette.middleware.sessions import SessionMiddleware
 import httpx
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timezone
+from datetime import datetime
 import io
 from openpyxl import Workbook
 from passlib.context import CryptContext
-import psycopg2
 
-def get_all_reports():
-    conn = psycopg2.connect(
-        "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
-    )
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, date_time, location, rig_number, footage, pogonometr, note
-        FROM reports
-        ORDER BY date_time DESC
-    """)
-    rows = cur.fetchall()
-    conn.close()
-    return rows
-
-# ==========================================
-# Настройки
-# ==========================================
+# === Настройки ===
 load_dotenv()
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "supersecret")
+SUPABASE_TABLE = "reports"
 
-app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
-
-
-# ==========================================
-# Вспомогательные функции
-# ==========================================
-async def supabase_get_reports():
+# === Вспомогательные функции ===
+async def supabase_request(method: str, endpoint: str = "", data=None, params=None):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}{endpoint}"
     async with httpx.AsyncClient() as client:
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        r = await client.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=headers)
-        return r.json()
+        response = await client.request(method, url, headers=headers, json=data, params=params)
+    response.raise_for_status()
+    return response.json() if response.text else None
 
 
-async def supabase_insert_report(data):
-    async with httpx.AsyncClient() as client:
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        }
-        await client.post(f"{SUPABASE_URL}/rest/v1/reports", headers=headers, json=data)
+# === Аутентификация ===
+ADMIN_LOGIN = "dispatcher"
+ADMIN_PASSWORD_HASH = pwd_context.hash("dispatch123")
 
 
-async def get_stored_password_hash():
-    """Получить хеш пароля из таблицы settings"""
-    async with httpx.AsyncClient() as client:
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        url = f"{SUPABASE_URL}/rest/v1/settings?select=value&key=eq.admin_pass_hash"
-        r = await client.get(url, headers=headers)
-        data = r.json()
-        if data:
-            return data[0]["value"]
-        return None
-
-
-async def set_stored_password_hash(new_hash: str):
-    """Сохранить новый хеш пароля"""
-    async with httpx.AsyncClient() as client:
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json"
-        }
-        # Проверяем, есть ли уже запись
-        check = await client.get(f"{SUPABASE_URL}/rest/v1/settings?key=eq.admin_pass_hash", headers=headers)
-        if check.json():
-            await client.patch(f"{SUPABASE_URL}/rest/v1/settings?key=eq.admin_pass_hash", headers=headers, json={"value": new_hash})
-        else:
-            await client.post(f"{SUPABASE_URL}/rest/v1/settings", headers=headers, json={"key": "admin_pass_hash", "value": new_hash})
-
-
-# ==========================================
-# Страницы
-# ==========================================
-@app.get("/", response_class=HTMLResponse)
-async def dispatcher_page(request: Request):
-    reports = get_all_reports()
-    user = {"username": "dispatcher"}  # фиктивный пользователь для шаблона
-    return templates.TemplateResponse("dispatcher.html", {
-        "request": request,
-        "reports": reports,
-        "user": user
-    })
+@app.get("/", response_class=RedirectResponse)
+async def root():
+    return RedirectResponse("/login")
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    ADMIN_USER = os.getenv("ADMIN_USER", "dispatcher")
-
-    stored_hash = await get_stored_password_hash()
-    if not stored_hash:
-        # если нет — используем дефолтный
-        stored_hash = pwd_context.hash("dispatch123")
-        await set_stored_password_hash(stored_hash)
-
-    if username == ADMIN_USER and pwd_context.verify(password, stored_hash):
-        request.session["logged_in"] = True
-        return RedirectResponse("/", status_code=302)
+    if username == ADMIN_LOGIN and pwd_context.verify(password, ADMIN_PASSWORD_HASH):
+        request.session["user"] = username
+        return RedirectResponse("/dispatcher", status_code=302)
     return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
 
 
@@ -133,95 +68,79 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# ==========================================
-# Смена пароля
-# ==========================================
-@app.get("/change_password", response_class=HTMLResponse)
-async def change_password_page(request: Request):
-    if not request.session.get("logged_in"):
-        return RedirectResponse("/login")
-    return templates.TemplateResponse("change_password.html", {"request": request, "message": None, "error": None})
+# === Отчёт буровика ===
+@app.get("/form", response_class=HTMLResponse)
+async def form_page(request: Request):
+    return templates.TemplateResponse("form.html", {"request": request})
 
 
-@app.post("/change_password", response_class=HTMLResponse)
-async def change_password(
-    request: Request,
-    old_password: str = Form(...),
-    new_password: str = Form(...)
-):
-    if not request.session.get("logged_in"):
-        return RedirectResponse("/login")
-
-    stored_hash = await get_stored_password_hash()
-    if not pwd_context.verify(old_password, stored_hash):
-        return templates.TemplateResponse("change_password.html", {"request": request, "error": "Старый пароль неверный", "message": None})
-
-    new_hash = pwd_context.hash(new_password)
-    await set_stored_password_hash(new_hash)
-    return templates.TemplateResponse("change_password.html", {"request": request, "error": None, "message": "Пароль успешно изменён!"})
-
-
-# ==========================================
-# API: приём сводки от буровика
-# ==========================================
 @app.post("/submit")
 async def submit_report(
-    section: str = Form(...),
+    request: Request,
+    date: str = Form(...),
+    time: str = Form(...),
+    site: str = Form(...),
     rig_number: str = Form(...),
-    meterage: float = Form(...),
-    pogon: float = Form(...),
-    note: str = Form("")
+    meterage: str = Form(...),
+    pogon: str = Form(...),
+    note: str = Form(""),
 ):
     data = {
-        "section": section,
+        "date": date,
+        "time": time,
+        "site": site,
         "rig_number": rig_number,
         "meterage": meterage,
         "pogon": pogon,
         "note": note,
-        "datetime": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.utcnow().isoformat()
     }
-    await supabase_insert_report(data)
+    await supabase_request("POST", "", data=[data])
     return {"message": "Report submitted successfully"}
 
 
-# ==========================================
-# API: экспорт в Excel
-# ==========================================
+# === Интерфейс диспетчера ===
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    if "user" not in request.session:
+        return RedirectResponse("/login")
+
+    reports = await supabase_request("GET", "", params={"select": "*", "order": "id.desc"})
+    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
+
+
+# === Экспорт в Excel ===
 @app.get("/export_excel")
 async def export_excel(request: Request):
-    if not request.session.get("logged_in"):
+    if "user" not in request.session:
         return RedirectResponse("/login")
-    reports = await supabase_get_reports()
 
+    reports = await supabase_request("GET", "", params={"select": "*"})
     wb = Workbook()
     ws = wb.active
-    ws.title = "Сводки"
+    ws.title = "Сводка"
 
-    ws.append(["ID", "Участок", "Номер буровой", "Метраж", "Погонометр", "Примечание", "Дата/время"])
+    headers = ["ID", "Дата", "Время", "Участок", "Буровая", "Метраж", "Погонометр", "Примечание"]
+    ws.append(headers)
+
     for r in reports:
         ws.append([
-            r.get("id", ""),
-            r.get("section", ""),
-            r.get("rig_number", ""),
-            r.get("meterage", ""),
-            r.get("pogon", ""),
-            r.get("note", ""),
-            r.get("datetime", "")
+            r.get("id"),
+            r.get("date"),
+            r.get("time"),
+            r.get("site"),
+            r.get("rig_number"),
+            r.get("meterage"),
+            r.get("pogon"),
+            r.get("note"),
         ])
 
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
     return StreamingResponse(
-        stream,
+        buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename=reports.xlsx"},
     )
-
-
-# ==========================================
-# Тест
-# ==========================================
-@app.get("/ping")
-def ping():
-    return {"status": "ok"}
