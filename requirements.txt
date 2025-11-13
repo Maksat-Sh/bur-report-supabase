@@ -1,12 +1,7 @@
 fastapi
 uvicorn
-httpx
-openpyxl
-python-dotenv
-supabase
-python-multipart
-itsdangerous
 jinja2
+httpx
+python-dotenv
+openpyxl
 passlib[bcrypt]
-psycopg2-binary
-
