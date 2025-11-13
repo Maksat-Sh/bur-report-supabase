@@ -102,7 +102,7 @@ async def submit_report(
 # === Интерфейс диспетчера ===
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher_page(request: Request):
-    reports = get_reports()
+    reports = await supabase_request("GET", "", params={"select": "*", "order": "id.desc"})
     user = {"username": "dispatch"}
     return templates.TemplateResponse(
         "dispatcher.html",
