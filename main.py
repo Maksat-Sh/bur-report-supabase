@@ -81,10 +81,10 @@ async def set_stored_password_hash(new_hash: str):
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def dispatcher_page(request: Request):
-    if not request.session.get("logged_in"):
-        return RedirectResponse("/login")
-    reports = await supabase_get_reports()
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
+    reports = get_all_reports()
+    user = {"username": "dispatcher"}  # чтобы шаблон не ругался
+    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports, "user": user})
+
 
 
 @app.get("/login", response_class=HTMLResponse)
