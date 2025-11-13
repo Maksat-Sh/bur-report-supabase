@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 import io
 from openpyxl import Workbook
-import hashlib
 from passlib.context import CryptContext
 
 # ==========================================
@@ -37,6 +36,7 @@ async def supabase_get_reports():
         r = await client.get(f"{SUPABASE_URL}/rest/v1/reports?select=*", headers=headers)
         return r.json()
 
+
 async def supabase_insert_report(data):
     async with httpx.AsyncClient() as client:
         headers = {
@@ -46,6 +46,35 @@ async def supabase_insert_report(data):
             "Prefer": "return=minimal"
         }
         await client.post(f"{SUPABASE_URL}/rest/v1/reports", headers=headers, json=data)
+
+
+async def get_stored_password_hash():
+    """Получить хеш пароля из таблицы settings"""
+    async with httpx.AsyncClient() as client:
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        url = f"{SUPABASE_URL}/rest/v1/settings?select=value&key=eq.admin_pass_hash"
+        r = await client.get(url, headers=headers)
+        data = r.json()
+        if data:
+            return data[0]["value"]
+        return None
+
+
+async def set_stored_password_hash(new_hash: str):
+    """Сохранить новый хеш пароля"""
+    async with httpx.AsyncClient() as client:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        # Проверяем, есть ли уже запись
+        check = await client.get(f"{SUPABASE_URL}/rest/v1/settings?key=eq.admin_pass_hash", headers=headers)
+        if check.json():
+            await client.patch(f"{SUPABASE_URL}/rest/v1/settings?key=eq.admin_pass_hash", headers=headers, json={"value": new_hash})
+        else:
+            await client.post(f"{SUPABASE_URL}/rest/v1/settings", headers=headers, json={"key": "admin_pass_hash", "value": new_hash})
+
 
 # ==========================================
 # Страницы
@@ -57,26 +86,61 @@ async def dispatcher_page(request: Request):
     reports = await supabase_get_reports()
     return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
 
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
+
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
     ADMIN_USER = os.getenv("ADMIN_USER", "dispatcher")
-    ADMIN_PASS_HASH = os.getenv("ADMIN_PASS_HASH")
-    if not ADMIN_PASS_HASH:
-        ADMIN_PASS_HASH = pwd_context.hash("12345")
 
-    if username == ADMIN_USER and pwd_context.verify(password, ADMIN_PASS_HASH):
+    stored_hash = await get_stored_password_hash()
+    if not stored_hash:
+        # если нет — используем дефолтный
+        stored_hash = pwd_context.hash("dispatch123")
+        await set_stored_password_hash(stored_hash)
+
+    if username == ADMIN_USER and pwd_context.verify(password, stored_hash):
         request.session["logged_in"] = True
         return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
+
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
+
+
+# ==========================================
+# Смена пароля
+# ==========================================
+@app.get("/change_password", response_class=HTMLResponse)
+async def change_password_page(request: Request):
+    if not request.session.get("logged_in"):
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("change_password.html", {"request": request, "message": None, "error": None})
+
+
+@app.post("/change_password", response_class=HTMLResponse)
+async def change_password(
+    request: Request,
+    old_password: str = Form(...),
+    new_password: str = Form(...)
+):
+    if not request.session.get("logged_in"):
+        return RedirectResponse("/login")
+
+    stored_hash = await get_stored_password_hash()
+    if not pwd_context.verify(old_password, stored_hash):
+        return templates.TemplateResponse("change_password.html", {"request": request, "error": "Старый пароль неверный", "message": None})
+
+    new_hash = pwd_context.hash(new_password)
+    await set_stored_password_hash(new_hash)
+    return templates.TemplateResponse("change_password.html", {"request": request, "error": None, "message": "Пароль успешно изменён!"})
+
 
 # ==========================================
 # API: приём сводки от буровика
@@ -99,6 +163,7 @@ async def submit_report(
     }
     await supabase_insert_report(data)
     return {"message": "Report submitted successfully"}
+
 
 # ==========================================
 # API: экспорт в Excel
@@ -133,6 +198,7 @@ async def export_excel(request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
     )
+
 
 # ==========================================
 # Тест
