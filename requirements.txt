@@ -8,4 +8,5 @@ python-multipart
 itsdangerous
 jinja2
 passlib[bcrypt]
+psycopg2-binary
 
