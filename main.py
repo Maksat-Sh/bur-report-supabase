@@ -10,6 +10,21 @@ from datetime import datetime, timezone
 import io
 from openpyxl import Workbook
 from passlib.context import CryptContext
+import psycopg2
+
+def get_all_reports():
+    conn = psycopg2.connect(
+        "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
+    )
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, date_time, location, rig_number, footage, pogonometr, note
+        FROM reports
+        ORDER BY date_time DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
 
 # ==========================================
 # Настройки
@@ -82,9 +97,12 @@ async def set_stored_password_hash(new_hash: str):
 @app.get("/", response_class=HTMLResponse)
 async def dispatcher_page(request: Request):
     reports = get_all_reports()
-    user = {"username": "dispatcher"}  # чтобы шаблон не ругался
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports, "user": user})
-
+    user = {"username": "dispatcher"}  # фиктивный пользователь для шаблона
+    return templates.TemplateResponse("dispatcher.html", {
+        "request": request,
+        "reports": reports,
+        "user": user
+    })
 
 
 @app.get("/login", response_class=HTMLResponse)
