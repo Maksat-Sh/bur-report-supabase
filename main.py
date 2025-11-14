@@ -149,3 +149,52 @@ async def export_excel(request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=reports.xlsx"},
     )
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    # Проверяем, что диспетчер вошёл
+    if not request.session.get("logged_in"):
+        return RedirectResponse(url="/login", status_code=302)
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, login FROM auth.users ORDER BY id ASC")
+            users = cur.fetchall()
+    except Exception as e:
+        print("Ошибка при получении пользователей:", e)
+        users = []
+
+    html = """
+    <html>
+    <head>
+        <title>Пользователи</title>
+        <link rel="stylesheet" href="/static/style.css">
+    </head>
+    <body>
+        <h2>Список пользователей</h2>
+        <table border="1" cellpadding="8">
+            <tr>
+                <th>ID</th>
+                <th>Логин</th>
+            </tr>
+    """
+
+    for user in users:
+        html += f"""
+            <tr>
+                <td>{user[0]}</td>
+                <td>{user[1]}</td>
+            </tr>
+        """
+
+    html += """
+        </table>
+
+        <br>
+        <a href="/dispatcher">
+            <button>⬅ Назад</button>
+        </a>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(content=html)
