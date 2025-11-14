@@ -10,7 +10,7 @@
   </label>
   <button type="submit">Применить</button>
 </form>
-<p><a href="/export_excel{% if selected_site %}?section={{ selected_site }}{% endif %}">Скачать в Excel</a> | <a href="/users">Пользователи</a></p>
+<p><a href="/export_excel{% if selected_site %}?section={{ selected_site }}{% endif %}">Скачать в Excel</a> | <a href="/users"><button type="button">Пользователи</button></a></p>
 <table class="reports"><thead><tr><th>ID</th><th>Дата UTC</th><th>Участок</th><th>Номер</th><th>Метраж</th><th>Погонометр</th><th>Операция</th><th>Автор</th><th>Примечание</th></tr></thead><tbody>
 {% for r in reports %}
   <tr>
