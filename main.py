@@ -79,26 +79,16 @@ async def login(request: Request, username: str = Form(...), password: str = For
     users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
     if not users:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный логин"}
-        )
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
     user = users[0]
 
-    # Проверяем bcrypt
-    stored_hash = user.get("password_hash")
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    if user.get("password_hash") != password_hash:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    if not stored_hash or not pwd_context.verify(password, stored_hash):
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный пароль"}
-        )
-
-    # Логин успешный
     request.session["user"] = user
     return RedirectResponse("/dispatcher", status_code=302)
-
 
 
 @app.get("/logout")
