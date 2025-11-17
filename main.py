@@ -76,7 +76,7 @@ async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
-import bcrypt
+import hashlib
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
@@ -87,12 +87,14 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    stored_hash = user.get("password_hash").encode()
-    if not bcrypt.checkpw(password.encode(), stored_hash):
+    given_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    if user.get("password_hash") != given_hash:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
     request.session["user"] = user
     return RedirectResponse("/dispatcher", status_code=302)
+
 
 
 @app.get("/logout")
