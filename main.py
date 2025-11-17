@@ -7,9 +7,12 @@ import httpx
 import os
 from dotenv import load_dotenv
 from datetime import datetime
-import hashlib
 import io
 from openpyxl import Workbook
+
+# bcrypt hashing
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # -------------------------------------------------------
 # CONFIG
@@ -75,17 +78,21 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # Find user in Supabase
     users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
     if not users:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
+        return templates.TemplateResponse("login.html",
+            {"request": request, "error": "Неверный логин"}
+        )
 
     user = users[0]
+    stored_hash = user.get("password_hash")
 
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    if user.get("password_hash") != password_hash:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    # Bcrypt verify
+    if not stored_hash or not pwd_context.verify(password, stored_hash):
+        return templates.TemplateResponse("login.html",
+            {"request": request, "error": "Неверный пароль"}
+        )
 
     request.session["user"] = user
     return RedirectResponse("/dispatcher", status_code=302)
@@ -201,7 +208,7 @@ async def export_excel(request: Request, section: str | None = None):
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
     )
 
 
@@ -244,7 +251,7 @@ async def create_user(
         "full_name": full_name,
         "fio": full_name,
         "password": password,
-        "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+        "password_hash": pwd_context.hash(password),  # bcrypt
         "role": role,
         "location": location,
         "created_at": datetime.utcnow().isoformat()
