@@ -76,23 +76,20 @@ async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
+import bcrypt
+
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
     users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
     if not users:
-        return templates.TemplateResponse("login.html",
-            {"request": request, "error": "Неверный логин"}
-        )
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
     user = users[0]
-    stored_hash = user.get("password_hash")
 
-    # Bcrypt verify
-    if not stored_hash or not pwd_context.verify(password, stored_hash):
-        return templates.TemplateResponse("login.html",
-            {"request": request, "error": "Неверный пароль"}
-        )
+    stored_hash = user.get("password_hash").encode()
+    if not bcrypt.checkpw(password.encode(), stored_hash):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
     request.session["user"] = user
     return RedirectResponse("/dispatcher", status_code=302)
