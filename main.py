@@ -94,10 +94,10 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    # --- правильная проверка bcrypt-хеша ---
-    if not pwd_context.verify(password, user.get("password_hash", "")):
+    given_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    if user.get("password_hash") != given_hash:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
-    # ----------------------------------------
 
     request.session["user"] = user
 
