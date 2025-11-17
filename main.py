@@ -75,6 +75,13 @@ async def root():
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.get("/report-form")
+async def report_form(request: Request):
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("report_form.html", {"request": request, "user": user})
+
 
 import hashlib
 
