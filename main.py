@@ -27,6 +27,34 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.on_event("startup")
+def create_default_users():
+    db: Session = SessionLocal()
+
+    # --- ДИСПЕТЧЕР ---
+    dispatcher = db.query(User).filter(User.username == "dispatcher").first()
+    if not dispatcher:
+        admin = User(
+            username="dispatcher",
+            hashed_password=pwd_context.hash("1234"),
+            role="dispatcher"
+        )
+        db.add(admin)
+
+    # --- ТЕСТОВЫЕ БУРОВИКИ ---
+    test_drillers = ["bur1", "bur2", "bur3"]
+    for username in test_drillers:
+        existing = db.query(User).filter(User.username == username).first()
+        if not existing:
+            user = User(
+                username=username,
+                hashed_password=pwd_context.hash("123"),
+                role="driller"
+            )
+            db.add(user)
+
+    db.commit()
+    db.close()
 
 # -------------------------------------------------------
 # SUPABASE HELPERS
