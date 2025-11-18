@@ -55,6 +55,17 @@ async def supabase_post(table: str, payload: dict):
         resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
         return resp.json()
+async def supabase_patch(table: str, payload: dict):
+    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{payload['id']}"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        return resp.json()
 
 
 # -------------------------------------------------------
@@ -105,8 +116,8 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
         # после входа — обновляем хеш
         new_hash = pwd_context.hash(password)
-        await supabase_post("users", {
-            "id": user["id"],
+       await supabase_patch("users", {
+    "id": user["id"],
             "password_hash": new_hash,
             "password": None
         })
