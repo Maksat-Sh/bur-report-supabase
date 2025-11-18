@@ -28,33 +28,32 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.on_event("startup")
-def create_default_users():
-    db: Session = SessionLocal()
+async def create_default_users():
+    # --- Создаём диспетчера ---
+    users = await supabase_get("users", "?select=*&username=eq.dispatcher")
+    if not users:
+        payload = {
+            "username": "dispatcher",
+            "full_name": "Администратор",
+            "password_hash": hashlib.sha256("1234".encode()).hexdigest(),
+            "role": "dispatcher",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        await supabase_post("users", payload)
 
-    # --- ДИСПЕТЧЕР ---
-    dispatcher = db.query(User).filter(User.username == "dispatcher").first()
-    if not dispatcher:
-        admin = User(
-            username="dispatcher",
-            hashed_password=pwd_context.hash("1234"),
-            role="dispatcher"
-        )
-        db.add(admin)
+    # --- Создаём тестовых буровиков ---
+    for u in ["bur1", "bur2", "bur3"]:
+        users = await supabase_get("users", f"?select=*&username=eq.{u}")
+        if not users:
+            payload = {
+                "username": u,
+                "full_name": f"Буровик {u}",
+                "password_hash": hashlib.sha256("123".encode()).hexdigest(),
+                "role": "driller",
+                "created_at": datetime.utcnow().isoformat()
+            }
+            await supabase_post("users", payload)
 
-    # --- ТЕСТОВЫЕ БУРОВИКИ ---
-    test_drillers = ["bur1", "bur2", "bur3"]
-    for username in test_drillers:
-        existing = db.query(User).filter(User.username == username).first()
-        if not existing:
-            user = User(
-                username=username,
-                hashed_password=pwd_context.hash("123"),
-                role="driller"
-            )
-            db.add(user)
-
-    db.commit()
-    db.close()
 
 # -------------------------------------------------------
 # SUPABASE HELPERS
