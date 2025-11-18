@@ -46,9 +46,10 @@ async def supabase_get(table: str, params: str = ""):
 async def supabase_post(table: str, payload: dict):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
+       "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, headers=headers, json=payload)
