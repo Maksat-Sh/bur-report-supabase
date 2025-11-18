@@ -94,17 +94,57 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
     user = users[0]
+    stored_hash = user.get("password_hash", "")
 
-    # Проверяем bcrypt
-    if not pwd_context.verify(password, user.get("password_hash", "")):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    # -----------------------------------------
+    # 1. Если в базе пусто — вход по обычному тексту (старый тип)
+    # -----------------------------------------
+    if stored_hash is None or stored_hash == "" or stored_hash.lower() == "null":
+        if password != user.get("password"):
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # сохраняем пользователя в сессию
+        # после входа — обновляем хеш
+        new_hash = pwd_context.hash(password)
+        await supabase_post("users", {
+            "id": user["id"],
+            "password_hash": new_hash,
+            "password": None
+        })
+
+    # -----------------------------------------
+    # 2. Если хеш похож на SHA-256
+    # -----------------------------------------
+    elif len(stored_hash) == 64 and all(c in "0123456789abcdef" for c in stored_hash.lower()):
+        sha = hashlib.sha256(password.encode()).hexdigest()
+        if sha != stored_hash:
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+
+        # после успешного входа — обновляем на bcrypt
+        new_hash = pwd_context.hash(password)
+        await supabase_post("users", {
+            "id": user["id"],
+            "password_hash": new_hash
+        })
+
+    # -----------------------------------------
+    # 3. bcrypt (новый формат)
+    # -----------------------------------------
+    else:
+        try:
+            if not pwd_context.verify(password, stored_hash):
+                return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+        except Exception:
+            # хеш повреждён → вход невозможен
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Ошибка хеша у пользователя"})
+
+    # -----------------------------------------
+    # Вход успешен
+    # -----------------------------------------
     request.session["user"] = user
 
-    # куда перенаправлять
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
+
     if user["role"] == "driller":
         return RedirectResponse("/report-form", status_code=302)
 
