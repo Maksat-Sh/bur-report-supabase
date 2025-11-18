@@ -55,17 +55,6 @@ async def supabase_post(table: str, payload: dict):
         resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
         return resp.json()
-async def supabase_patch(table: str, payload: dict):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{payload['id']}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.patch(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        return resp.json()
 
 
 # -------------------------------------------------------
@@ -105,54 +94,15 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
     user = users[0]
-    stored_hash = user.get("password_hash", "")
 
-    # -----------------------------------------
-    # 1. Если в базе пусто — вход по обычному тексту (старый тип)
-    # -----------------------------------------
-    if stored_hash is None or stored_hash == "" or stored_hash.lower() == "null":
-        if password != user.get("password"):
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    given_hash = hashlib.sha256(password.encode()).hexdigest()
 
-        # после входа — обновляем хеш
-        new_hash = pwd_context.hash(password)
-       await supabase_patch("users", {
-    "id": user["id"],
-            "password_hash": new_hash,
-            "password": None
-        })
+    if user.get("password_hash") != given_hash:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # -----------------------------------------
-    # 2. Если хеш похож на SHA-256
-    # -----------------------------------------
-    elif len(stored_hash) == 64 and all(c in "0123456789abcdef" for c in stored_hash.lower()):
-        sha = hashlib.sha256(password.encode()).hexdigest()
-        if sha != stored_hash:
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
-
-        # после успешного входа — обновляем на bcrypt
-        new_hash = pwd_context.hash(password)
-        await supabase_post("users", {
-            "id": user["id"],
-            "password_hash": new_hash
-        })
-
-    # -----------------------------------------
-    # 3. bcrypt (новый формат)
-    # -----------------------------------------
-    else:
-        try:
-            if not pwd_context.verify(password, stored_hash):
-                return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
-        except Exception:
-            # хеш повреждён → вход невозможен
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Ошибка хеша у пользователя"})
-
-    # -----------------------------------------
-    # Вход успешен
-    # -----------------------------------------
     request.session["user"] = user
 
+    # РАЗНЫЕ ПУТИ ДЛЯ РАЗНЫХ РОЛЕЙ
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
 
@@ -160,7 +110,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return RedirectResponse("/report-form", status_code=302)
 
     return RedirectResponse("/", status_code=302)
-
 
 
 
