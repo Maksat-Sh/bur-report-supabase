@@ -120,24 +120,21 @@ async def login(request: Request, username: str = Form(...), password: str = For
     if not users:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
-    user = users[0]
+   user = users[0]
 
-    given_hash = hashlib.sha256(password.encode()).hexdigest()
+if not pwd_context.verify(password, user.get("password_hash")):
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    if user.get("password_hash") != given_hash:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+request.session["user"] = user
 
-    request.session["user"] = user
+# РАЗНЫЕ ПУТИ ДЛЯ РАЗНЫХ РОЛЕЙ
+if user["role"] == "dispatcher":
+    return RedirectResponse("/dispatcher", status_code=302)
 
-    # РАЗНЫЕ ПУТИ ДЛЯ РАЗНЫХ РОЛЕЙ
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
+if user["role"] == "driller":
+    return RedirectResponse("/form", status_code=302)  # ← корректный путь к форме буровика
 
-    if user["role"] == "driller":
-        return RedirectResponse("/report-form", status_code=302)
-
-    return RedirectResponse("/", status_code=302)
-
+return RedirectResponse("/", status_code=302)
 
 
 
