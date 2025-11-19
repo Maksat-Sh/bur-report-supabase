@@ -295,7 +295,7 @@ async def create_user(
         "full_name": full_name,
         "fio": full_name,
         "password": password,
-        "password_hash": pwd_context.hash(password),  # bcrypt
+      "password_hash": hashlib.sha256(password.encode()).hexdigest()
         "role": role,
         "location": location,
         "created_at": datetime.utcnow().isoformat()
