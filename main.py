@@ -9,9 +9,10 @@ from dotenv import load_dotenv
 from datetime import datetime
 import io
 from openpyxl import Workbook
-
-# bcrypt hashing
 from passlib.context import CryptContext
+import hashlib
+
+# bcrypt context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # -------------------------------------------------------
@@ -26,33 +27,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.on_event("startup")
-async def create_default_users():
-    # --- Создаём диспетчера ---
-    users = await supabase_get("users", "?select=*&username=eq.dispatcher")
-    if not users:
-        payload = {
-            "username": "dispatcher",
-            "full_name": "Администратор",
-            "password_hash": hashlib.sha256("1234".encode()).hexdigest(),
-            "role": "dispatcher",
-            "created_at": datetime.utcnow().isoformat()
-        }
-        await supabase_post("users", payload)
-
-    # --- Создаём тестовых буровиков ---
-    for u in ["bur1", "bur2", "bur3"]:
-        users = await supabase_get("users", f"?select=*&username=eq.{u}")
-        if not users:
-            payload = {
-                "username": u,
-                "full_name": f"Буровик {u}",
-                "password_hash": hashlib.sha256("123".encode()).hexdigest(),
-                "role": "driller",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            await supabase_post("users", payload)
 
 
 # -------------------------------------------------------
@@ -73,15 +47,48 @@ async def supabase_get(table: str, params: str = ""):
 async def supabase_post(table: str, payload: dict):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     headers = {
-       "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
         return resp.json()
+
+
+# -------------------------------------------------------
+# STARTUP: CREATE DEFAULT USERS WITH BCRYPT
+# -------------------------------------------------------
+@app.on_event("startup")
+async def create_default_users():
+    # Диспетчер
+    users = await supabase_get("users", "?select=*&username=eq.dispatcher")
+    if not users:
+        hashed = pwd_context.hash("1234")
+        payload = {
+            "username": "dispatcher",
+            "full_name": "Администратор",
+            "password_hash": hashed,
+            "role": "dispatcher",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        await supabase_post("users", payload)
+
+    # Буровики
+    for u in ["bur1", "bur2", "bur3"]:
+        users = await supabase_get("users", f"?select=*&username=eq.{u}")
+        if not users:
+            hashed = pwd_context.hash("123")
+            payload = {
+                "username": u,
+                "full_name": f"Буровик {u}",
+                "password_hash": hashed,
+                "role": "driller",
+                "created_at": datetime.utcnow().isoformat()
+            }
+            await supabase_post("users", payload)
 
 
 # -------------------------------------------------------
@@ -103,50 +110,35 @@ async def root():
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-@app.get("/report-form")
-async def report_form(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse("report_form.html", {"request": request, "user": user})
-
-
-import hashlib
 
 @app.post("/login")
-async def login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
-):
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+
     users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
     if not users:
         return templates.TemplateResponse(
-            "login.html", 
-            {"request": request, "error": "Неверный логин"}
+            "login.html", {"request": request, "error": "Неверный логин"}
         )
 
     user = users[0]
 
-    # Проверка хэша bcrypt
+    # Проверяем bcrypt
     if not pwd_context.verify(password, user.get("password_hash")):
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный пароль"}
+            "login.html", {"request": request, "error": "Неверный пароль"}
         )
 
     request.session["user"] = user
 
-    # Разные роли — разные страницы
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
 
     if user["role"] == "driller":
         return RedirectResponse("/form", status_code=302)
 
-    # fallback
     return RedirectResponse("/", status_code=302)
+
 
 @app.get("/logout")
 async def logout(request: Request):
@@ -155,11 +147,14 @@ async def logout(request: Request):
 
 
 # -------------------------------------------------------
-# REPORT FORM FOR DRILLERS
+# DRILLER FORM
 # -------------------------------------------------------
 @app.get("/form", response_class=HTMLResponse)
 async def form_page(request: Request):
-    return templates.TemplateResponse("form.html", {"request": request})
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("form.html", {"request": request, "user": user})
 
 
 @app.post("/submit")
@@ -203,11 +198,15 @@ async def dispatcher_page(request: Request, section: str | None = None):
 
     reports = await supabase_get("reports", params)
 
-    sites = ['', 'Хорасан', 'Заречное', 'Карамурын', 'Ирколь', 'Степногорск']
-
     return templates.TemplateResponse(
         "dispatcher.html",
-        {"request": request, "user": user, "reports": reports, "sites": sites, "selected_site": section or ""}
+        {
+            "request": request,
+            "user": user,
+            "reports": reports,
+            "sites": ['', 'Хорасан', 'Заречное', 'Карамурын', 'Ирколь', 'Степногорск'],
+            "selected_site": section or ""
+        }
     )
 
 
@@ -231,21 +230,18 @@ async def export_excel(request: Request, section: str | None = None):
     ws.title = "reports"
 
     ws.append([
-        "ID", "Дата UTC", "Участок", "Номер агрегата", "Метраж", "Погонометр",
-        "Операция", "Автор", "Примечание"
+        "ID", "Дата UTC", "Участок", "Номер агрегата",
+        "Метраж", "Погонометр", "Примечание"
     ])
 
     for r in reports:
-        created = r.get("created_at") or r.get("timestamp") or ""
         ws.append([
             r.get("id"),
-            created,
-            r.get("section") or r.get("location"),
+            r.get("created_at"),
+            r.get("section"),
             r.get("rig_number"),
             r.get("meterage"),
             r.get("pogonometr"),
-            r.get("operation_type") or r.get("operation"),
-            r.get("operator_name"),
             r.get("note") or ""
         ])
 
@@ -272,16 +268,15 @@ async def users_page(request: Request):
         return RedirectResponse("/login")
 
     users = await supabase_get("users", "?select=*")
-    sites = ['Хорасан', 'Заречное', 'Карамурын', 'Ирколь', 'Степногорск']
 
     return templates.TemplateResponse(
         "users.html",
-        {"request": request, "user": user, "users": users, "sites": sites}
+        {"request": request, "user": user, "users": users}
     )
 
 
 # -------------------------------------------------------
-# CREATE USER
+# CREATE USER (bcrypt)
 # -------------------------------------------------------
 @app.post("/create_user")
 async def create_user(
@@ -296,12 +291,13 @@ async def create_user(
     if not admin or admin.get("role") != "dispatcher":
         return RedirectResponse("/login")
 
+    hashed = pwd_context.hash(password)
+
     payload = {
         "username": username,
         "full_name": full_name,
         "fio": full_name,
-        "password": password,
-      "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+        "password_hash": hashed,
         "role": role,
         "location": location,
         "created_at": datetime.utcnow().isoformat()
