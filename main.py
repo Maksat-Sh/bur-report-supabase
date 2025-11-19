@@ -114,30 +114,39 @@ async def report_form(request: Request):
 import hashlib
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
     users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
     if not users:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
+        return templates.TemplateResponse(
+            "login.html", 
+            {"request": request, "error": "Неверный логин"}
+        )
 
-   user = users[0]
+    user = users[0]
 
-if not pwd_context.verify(password, user.get("password_hash")):
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    # Проверка хэша bcrypt
+    if not pwd_context.verify(password, user.get("password_hash")):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный пароль"}
+        )
 
-request.session["user"] = user
+    request.session["user"] = user
 
-# РАЗНЫЕ ПУТИ ДЛЯ РАЗНЫХ РОЛЕЙ
-if user["role"] == "dispatcher":
-    return RedirectResponse("/dispatcher", status_code=302)
+    # Разные роли — разные страницы
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
 
-if user["role"] == "driller":
-    return RedirectResponse("/form", status_code=302)  # ← корректный путь к форме буровика
+    if user["role"] == "driller":
+        return RedirectResponse("/form", status_code=302)
 
-return RedirectResponse("/", status_code=302)
-
-
-
+    # fallback
+    return RedirectResponse("/", status_code=302)
 
 @app.get("/logout")
 async def logout(request: Request):
