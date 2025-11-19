@@ -151,7 +151,7 @@ async def login(
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
+    return RedirectResponse("/login", status_code=302)
 
 
 # -------------------------------------------------------
