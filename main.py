@@ -25,13 +25,13 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "su
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# supabase config
-#SUPABASE_URL = os.getenv("SUPABASE_URL")
-#SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+ supabase config
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-#if not SUPABASE_URL or not SUPABASE_KEY:
-    # You can still run locally but many routes will fail if Supabase not configured.
- #   print("WARNING: SUPABASE_URL or SUPABASE_KEY not set in environment.")
+if not SUPABASE_URL or not SUPABASE_KEY:
+ You can still run locally but many routes will fail if Supabase not configured.
+   print("WARNING: SUPABASE_URL or SUPABASE_KEY not set in environment.")
 
 # password contexts
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -39,12 +39,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ---------------------------
 # Supabase helpers (HTTP)
 # ---------------------------
-#async def supabase_get(table: str, params: str = "") -> typing.Any:
- #   url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
-  #  headers = {
-   #     "apikey": SUPABASE_KEY,
-    #    "Authorization": f"Bearer {SUPABASE_KEY}"
-    #}
+async def supabase_get(table: str, params: str = "") -> typing.Any:
+   url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
+  headers = {
+     "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
