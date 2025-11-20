@@ -1,161 +1,138 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
-from passlib.context import CryptContext
+from fastapi.templating import Jinja2Templates
 from datetime import datetime
-import asyncpg
+import hashlib
+import httpx
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8r433s73btijog-a/report_oag9")
-SUPABASE_URL=https://ovkfakpwgvrpbnjbrkza.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774
 app = FastAPI()
 
-origins = ["*"]
+# ---------------------------------------------------
+# CONFIG
+# ---------------------------------------------------
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ovkfakpwgvrpbnjbrkza.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # ОБЯЗАТЕЛЬНО ВЫНЕСТИ В ПЕРЕМЕННЫЕ Render
+SUPABASE_HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json"
+}
+
+templates = Jinja2Templates(directory="templates")
+
+# ---------------------------------------------------
+# УТИЛИТЫ Supabase
+# ---------------------------------------------------
+
+async def supabase_get(table, query=""):
+    url = f"{SUPABASE_URL}/rest/v1/{table}{query}"
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, headers=SUPABASE_HEADERS)
+        if r.status_code != 200:
+            print("GET ERROR:", r.text)
+            return []
+        return r.json()
+
+async def supabase_insert(table, data):
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, headers=SUPABASE_HEADERS, json=data)
+        print("INSERT STATUS:", r.status_code, r.text)
+        return r.status_code, r.text
+
+# ---------------------------------------------------
+# CORS
+# ---------------------------------------------------
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+# ---------------------------------------------------
+# LOGIN PAGE
+# ---------------------------------------------------
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
-async def get_db():
-    return await asyncpg.connect(DATABASE_URL)
-
-
-# ================================================================
-#   UTILS
-# ================================================================
-
-async def get_user_by_username(username: str):
-    conn = await get_db()
-    row = await conn.fetchrow(
-        "SELECT * FROM users WHERE username=$1", username
-    )
-    await conn.close()
-    return row
-
-
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
-@app.get("/create_user_form", response_class=HTMLResponse)
-async def create_user_form(request: Request):
-    return templates.TemplateResponse(
-        "create_user_form.html",
-        {"request": request}
-    )
-
-# ================================================================
-#   AUTH LOGIN
-# ================================================================
+# ---------------------------------------------------
+# LOGIN HANDLER
+# ---------------------------------------------------
 
 @app.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await get_user_by_username(form_data.username)
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    users = await supabase_get("users", f"?select=*&username=eq.{username}")
 
-    if not user:
-        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
+    if not users:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
-    if not verify_password(form_data.password, user["password_hash"]):
-        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
+    user = users[0]
 
-    return {
-        "access_token": user["username"],
-        "role": user["role"],
-        "token_type": "bearer"
-    }
+    # SHA256, как у тебя в БД
+    given_hash = hashlib.sha256(password.encode()).hexdigest()
 
+    if user.get("password_hash") != given_hash:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-# ================================================================
-#   CREATE USER (временно включено)
-# ================================================================
+    request.session = {}
+    request.session["user"] = user
+
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+
+    if user["role"] == "driller":
+        return RedirectResponse("/report-form", status_code=302)
+
+    return RedirectResponse("/", status_code=302)
+
+# ---------------------------------------------------
+# LOGOUT
+# ---------------------------------------------------
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session = {}
+    return RedirectResponse("/login")
+
+# ---------------------------------------------------
+# СОЗДАНИЕ ПОЛЬЗОВАТЕЛЕЙ (API)
+# ---------------------------------------------------
 
 @app.post("/create_user")
-async def create_user(username: str, password: str, full_name: str, role: str = "driller"):
-    conn = await get_db()
+async def create_user(username: str, password: str, full_name: str = "", role: str = "driller"):
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
 
-    hashed = hash_password(password)
+    payload = {
+        "username": username,
+        "password_hash": password_hash,
+        "full_name": full_name,
+        "role": role,
+        "created_at": datetime.utcnow().isoformat(),
+    }
 
-    try:
-        await conn.execute(
-            """
-            INSERT INTO users (username, password_hash, full_name, role, created_at)
-            VALUES ($1, $2, $3, $4, $5)
-            """,
-            username, hashed, full_name, role, datetime.utcnow()
-        )
-    except Exception as e:
-        return {"error": str(e)}
+    status, text = await supabase_insert("users", payload)
 
-    await conn.close()
+    if status in (200, 201):
+        return {"status": "ok", "user": username}
 
-    return {"status": "ok", "username": username}
+    return {"status": "error", "detail": text}
 
+# ---------------------------------------------------
+# СТРАНИЦЫ (для диспетчера и буровиков)
+# ---------------------------------------------------
 
-# ================================================================
-#   SUBMIT REPORT (буровик)
-# ================================================================
-
-@app.post("/submit_report")
-async def submit_report(
-    username: str = Form(...),
-    section: str = Form(...),
-    rig_number: str = Form(...),
-    meterage: str = Form(...),
-    pogon: str = Form(...),
-    operation: str = Form(...),
-    responsible: str = Form(...),
-    note: str = Form("")
-):
-    conn = await get_db()
-
-    await conn.execute(
-        """
-        INSERT INTO reports (username, section, rig_number, meterage, pogon, operation, responsible, note, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        """,
-        username, section, rig_number, meterage, pogon,
-        operation, responsible, note, datetime.utcnow()
-    )
-
-    await conn.close()
-
-    return {"message": "Report submitted successfully"}
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    return templates.TemplateResponse("dispatcher.html", {"request": request})
 
 
-# ================================================================
-#   GET REPORTS (диспетчер)
-# ================================================================
-
-@app.get("/get_reports")
-async def get_reports(token: str = Depends(oauth2_scheme)):
-    user = await get_user_by_username(token)
-    if not user or user["role"] != "dispatcher":
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    conn = await get_db()
-    rows = await conn.fetch("SELECT * FROM reports ORDER BY created_at DESC")
-    await conn.close()
-
-    return rows
-
-
-# ================================================================
-#   ROOT — /dispatcher.html
-# ================================================================
-
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    with open("dispatcher.html", encoding="utf-8") as f:
-        return f.read()
+@app.get("/report-form", response_class=HTMLResponse)
+async def form_page(request: Request):
+    return templates.TemplateResponse("form.html", {"request": request})
