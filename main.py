@@ -1,316 +1,154 @@
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
-import httpx
-import os
-from dotenv import load_dotenv
-from datetime import datetime
-import io
-from openpyxl import Workbook
+from fastapi import FastAPI, Depends, HTTPException, Request, Form
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
-import hashlib
+from datetime import datetime
+import asyncpg
+import os
 
-# bcrypt context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8r433s73btijog-a/report_oag9")
 
-# -------------------------------------------------------
-# CONFIG
-# -------------------------------------------------------
-load_dotenv()
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-
-# -------------------------------------------------------
-# SUPABASE HELPERS
-# -------------------------------------------------------
-async def supabase_get(table: str, params: str = ""):
-    url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
-async def supabase_post(table: str, payload: dict):
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        return resp.json()
+async def get_db():
+    return await asyncpg.connect(DATABASE_URL)
 
 
-# -------------------------------------------------------
-# STARTUP: CREATE DEFAULT USERS WITH BCRYPT
-# -------------------------------------------------------
-@app.on_event("startup")
-async def create_default_users():
-    # Диспетчер
-    users = await supabase_get("users", "?select=*&username=eq.dispatcher")
-    if not users:
-        hashed = pwd_context.hash("1234")
-        payload = {
-            "username": "dispatcher",
-            "full_name": "Администратор",
-            "password_hash": hashed,
-            "role": "dispatcher",
-            "created_at": datetime.utcnow().isoformat()
-        }
-        await supabase_post("users", payload)
+# ================================================================
+#   UTILS
+# ================================================================
 
-    # Буровики
-    for u in ["bur1", "bur2", "bur3"]:
-        users = await supabase_get("users", f"?select=*&username=eq.{u}")
-        if not users:
-            hashed = pwd_context.hash("123")
-            payload = {
-                "username": u,
-                "full_name": f"Буровик {u}",
-                "password_hash": hashed,
-                "role": "driller",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            await supabase_post("users", payload)
+async def get_user_by_username(username: str):
+    conn = await get_db()
+    row = await conn.fetchrow(
+        "SELECT * FROM users WHERE username=$1", username
+    )
+    await conn.close()
+    return row
 
 
-# -------------------------------------------------------
-# AUTH HELPERS
-# -------------------------------------------------------
-def get_current_user(request: Request):
-    return request.session.get("user")
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
 
 
-# -------------------------------------------------------
-# ROOT + LOGIN
-# -------------------------------------------------------
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse("/login")
+def hash_password(password: str):
+    return pwd_context.hash(password)
 
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
+# ================================================================
+#   AUTH LOGIN
+# ================================================================
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await get_user_by_username(form_data.username)
 
-    users = await supabase_get("users", f"?select=*&username=eq.{username}")
-
-    if not users:
-        return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Неверный логин"}
-        )
-
-    user = users[0]
-
-    # Проверяем bcrypt
-    if not pwd_context.verify(password, user.get("password_hash")):
-        return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Неверный пароль"}
-        )
-
-    request.session["user"] = user
-
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-
-    if user["role"] == "driller":
-        return RedirectResponse("/form", status_code=302)
-
-    return RedirectResponse("/", status_code=302)
-
-
-@app.get("/logout")
-async def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login", status_code=302)
-
-
-# -------------------------------------------------------
-# DRILLER FORM
-# -------------------------------------------------------
-@app.get("/form", response_class=HTMLResponse)
-async def form_page(request: Request):
-    user = get_current_user(request)
     if not user:
-        return RedirectResponse("/login")
-    return templates.TemplateResponse("form.html", {"request": request, "user": user})
+        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
 
+    if not verify_password(form_data.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
 
-@app.post("/submit")
-async def submit_report(
-        date: str = Form(...),
-        time: str = Form(...),
-        site: str = Form(...),
-        rig_number: str = Form(...),
-        meterage: str = Form(...),
-        pogon: str = Form(...),
-        note: str = Form("")
-):
-    payload = {
-        "date": date,
-        "time": time,
-        "section": site,
-        "rig_number": rig_number,
-        "meterage": meterage,
-        "pogonometr": pogon,
-        "note": note,
-        "created_at": datetime.utcnow().isoformat()
+    return {
+        "access_token": user["username"],
+        "role": user["role"],
+        "token_type": "bearer"
     }
 
-    await supabase_post("reports", payload)
+
+# ================================================================
+#   CREATE USER (временно включено)
+# ================================================================
+
+@app.post("/create_user")
+async def create_user(username: str, password: str, full_name: str, role: str = "driller"):
+    conn = await get_db()
+
+    hashed = hash_password(password)
+
+    try:
+        await conn.execute(
+            """
+            INSERT INTO users (username, password_hash, full_name, role, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            username, hashed, full_name, role, datetime.utcnow()
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+    await conn.close()
+
+    return {"status": "ok", "username": username}
+
+
+# ================================================================
+#   SUBMIT REPORT (буровик)
+# ================================================================
+
+@app.post("/submit_report")
+async def submit_report(
+    username: str = Form(...),
+    section: str = Form(...),
+    rig_number: str = Form(...),
+    meterage: str = Form(...),
+    pogon: str = Form(...),
+    operation: str = Form(...),
+    responsible: str = Form(...),
+    note: str = Form("")
+):
+    conn = await get_db()
+
+    await conn.execute(
+        """
+        INSERT INTO reports (username, section, rig_number, meterage, pogon, operation, responsible, note, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        """,
+        username, section, rig_number, meterage, pogon,
+        operation, responsible, note, datetime.utcnow()
+    )
+
+    await conn.close()
 
     return {"message": "Report submitted successfully"}
 
 
-# -------------------------------------------------------
-# DISPATCHER PAGE
-# -------------------------------------------------------
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request, section: str | None = None):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
-        return RedirectResponse("/login")
+# ================================================================
+#   GET REPORTS (диспетчер)
+# ================================================================
 
-    params = "?select=*&order=created_at.desc"
-    if section:
-        params = f"?select=*&order=created_at.desc&section=eq.{section}"
+@app.get("/get_reports")
+async def get_reports(token: str = Depends(oauth2_scheme)):
+    user = await get_user_by_username(token)
+    if not user or user["role"] != "dispatcher":
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    reports = await supabase_get("reports", params)
+    conn = await get_db()
+    rows = await conn.fetch("SELECT * FROM reports ORDER BY created_at DESC")
+    await conn.close()
 
-    return templates.TemplateResponse(
-        "dispatcher.html",
-        {
-            "request": request,
-            "user": user,
-            "reports": reports,
-            "sites": ['', 'Хорасан', 'Заречное', 'Карамурын', 'Ирколь', 'Степногорск'],
-            "selected_site": section or ""
-        }
-    )
+    return rows
 
 
-# -------------------------------------------------------
-# EXPORT EXCEL
-# -------------------------------------------------------
-@app.get("/export_excel")
-async def export_excel(request: Request, section: str | None = None):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
-        return RedirectResponse("/login")
+# ================================================================
+#   ROOT — /dispatcher.html
+# ================================================================
 
-    params = "?select=*&order=created_at.desc"
-    if section:
-        params = f"?select=*&order=created_at.desc&section=eq.{section}"
-
-    reports = await supabase_get("reports", params)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "reports"
-
-    ws.append([
-        "ID", "Дата UTC", "Участок", "Номер агрегата",
-        "Метраж", "Погонометр", "Примечание"
-    ])
-
-    for r in reports:
-        ws.append([
-            r.get("id"),
-            r.get("created_at"),
-            r.get("section"),
-            r.get("rig_number"),
-            r.get("meterage"),
-            r.get("pogonometr"),
-            r.get("note") or ""
-        ])
-
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-
-    filename = f"reports_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
-    return StreamingResponse(
-        stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
-    )
-
-
-# -------------------------------------------------------
-# USERS PAGE
-# -------------------------------------------------------
-@app.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
-        return RedirectResponse("/login")
-
-    users = await supabase_get("users", "?select=*")
-
-    return templates.TemplateResponse(
-        "users.html",
-        {"request": request, "user": user, "users": users}
-    )
-
-
-# -------------------------------------------------------
-# CREATE USER (bcrypt)
-# -------------------------------------------------------
-@app.post("/create_user")
-async def create_user(
-        request: Request,
-        username: str = Form(...),
-        full_name: str = Form(""),
-        password: str = Form(...),
-        role: str = Form(...),
-        location: str = Form(None)
-):
-    admin = get_current_user(request)
-    if not admin or admin.get("role") != "dispatcher":
-        return RedirectResponse("/login")
-
-    hashed = pwd_context.hash(password)
-
-    payload = {
-        "username": username,
-        "full_name": full_name,
-        "fio": full_name,
-        "password_hash": hashed,
-        "role": role,
-        "location": location,
-        "created_at": datetime.utcnow().isoformat()
-    }
-
-    await supabase_post("users", payload)
-
-    return RedirectResponse("/users", status_code=303)
-
-
-# -------------------------------------------------------
-# PING
-# -------------------------------------------------------
-@app.get("/ping")
-def ping():
-    return {"status": "ok"}
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    with open("dispatcher.html", encoding="utf-8") as f:
+        return f.read()
