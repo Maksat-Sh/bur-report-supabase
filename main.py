@@ -29,9 +29,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 #SUPABASE_URL = os.getenv("SUPABASE_URL")
 #SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
+#if not SUPABASE_URL or not SUPABASE_KEY:
     # You can still run locally but many routes will fail if Supabase not configured.
-    print("WARNING: SUPABASE_URL or SUPABASE_KEY not set in environment.")
+ #   print("WARNING: SUPABASE_URL or SUPABASE_KEY not set in environment.")
 
 # password contexts
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
