@@ -8,7 +8,8 @@ import asyncpg
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8r433s73btijog-a/report_oag9")
-
+SUPABASE_URL=https://ovkfakpwgvrpbnjbrkza.supabase.co
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774
 app = FastAPI()
 
 origins = ["*"]
