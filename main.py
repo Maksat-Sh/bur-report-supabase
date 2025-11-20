@@ -48,6 +48,12 @@ def verify_password(plain, hashed):
 def hash_password(password: str):
     return pwd_context.hash(password)
 
+@app.get("/create_user_form", response_class=HTMLResponse)
+async def create_user_form(request: Request):
+    return templates.TemplateResponse(
+        "create_user_form.html",
+        {"request": request}
+    )
 
 # ================================================================
 #   AUTH LOGIN
