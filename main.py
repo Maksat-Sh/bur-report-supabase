@@ -47,7 +47,7 @@ if not os.path.exists(DB_PATH):
 
     # начальные пользователи
     c.execute("INSERT INTO users (username, password, role) VALUES ('dispatcher', '1234', 'dispatcher')")
-    c.execute("INSERT INTO users (username, password, role) VALUES ('bur1', '123', 'bur')")
+    c.execute("INSERT INTO users (username, password, role) VALUES ('bur1', '123', 'driller')")
 
     conn.commit()
     conn.close()
