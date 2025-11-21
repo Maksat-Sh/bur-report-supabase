@@ -103,20 +103,22 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    # Проверка bcrypt
-    if not pwd_context.verify(password, user.get("password_hash", "")):
+    # bcrypt проверка
+    if not pwd_context.verify(password, user.get("password_hash")):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # ⬅ Если пароль верный — сохраняем юзера
+    # Сохраняем пользователя в сессии
     request.session["user"] = user
 
-    # Переход по роли
+    # РАЗНЫЕ ПУТИ ДЛЯ РОЛЕЙ
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
+
     if user["role"] == "driller":
         return RedirectResponse("/report-form", status_code=302)
 
     return RedirectResponse("/", status_code=302)
+
 
 
 
