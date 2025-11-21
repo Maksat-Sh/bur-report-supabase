@@ -25,7 +25,7 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "su
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
- supabase config
+ #supabase config
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
