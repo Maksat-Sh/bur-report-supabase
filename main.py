@@ -39,12 +39,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ---------------------------
 # Supabase helpers (HTTP)
 # ---------------------------
-async def supabase_get(table: str, params: str = "") -> typing.Any:
-   url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
-  headers = {
-     "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
+#async def supabase_get(table: str, params: str = "") -> typing.Any:
+ #  url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
+ # headers = {
+ #    "apikey": SUPABASE_KEY,
+ #   "Authorization": f"Bearer {SUPABASE_KEY}"
+ #   }
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
