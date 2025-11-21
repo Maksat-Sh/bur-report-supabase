@@ -95,14 +95,13 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    # --- Правильная проверка bcrypt ---
+    # СРАВНЕНИЕ BCRYPT
     if not pwd_context.verify(password, user.get("password_hash", "")):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # логин успешен → сохраняем сессию
+    # вход успешный
     request.session["user"] = user
 
-    # перенаправления
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
 
@@ -110,6 +109,7 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return RedirectResponse("/report-form", status_code=302)
 
     return RedirectResponse("/", status_code=302)
+
 
 
 
