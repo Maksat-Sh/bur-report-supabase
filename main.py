@@ -84,7 +84,7 @@ async def report_form(request: Request):
     return templates.TemplateResponse("report_form.html", {"request": request, "user": user})
 
 
-import hashlib
+
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
@@ -95,22 +95,20 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    given_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    if user.get("password_hash") != given_hash:
+    # Проверка bcrypt
+    if not pwd_context.verify(password, user.get("password_hash", "")):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
+    # ⬅ Если пароль верный — сохраняем юзера
     request.session["user"] = user
 
-    # РАЗНЫЕ ПУТИ ДЛЯ РАЗНЫХ РОЛЕЙ
+    # Переход по роли
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
-
     if user["role"] == "driller":
         return RedirectResponse("/report-form", status_code=302)
 
     return RedirectResponse("/", status_code=302)
-
 
 
 
