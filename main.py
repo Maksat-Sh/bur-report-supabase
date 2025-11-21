@@ -67,6 +67,14 @@ def get_current_user(request: Request):
 # -------------------------------------------------------
 # ROOT + LOGIN
 # -------------------------------------------------------
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+...
+
+if not pwd_context.verify(password, user.get("password_hash")):
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse("/login")
