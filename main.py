@@ -67,14 +67,6 @@ def get_current_user(request: Request):
 # -------------------------------------------------------
 # ROOT + LOGIN
 # -------------------------------------------------------
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-...
-
-if not pwd_context.verify(password, user.get("password_hash")):
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
-
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse("/login")
@@ -103,14 +95,14 @@ async def login(request: Request, username: str = Form(...), password: str = For
 
     user = users[0]
 
-    # bcrypt проверка
-    if not pwd_context.verify(password, user.get("password_hash")):
+    # --- Правильная проверка bcrypt ---
+    if not pwd_context.verify(password, user.get("password_hash", "")):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # Сохраняем пользователя в сессии
+    # логин успешен → сохраняем сессию
     request.session["user"] = user
 
-    # РАЗНЫЕ ПУТИ ДЛЯ РОЛЕЙ
+    # перенаправления
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
 
@@ -118,7 +110,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return RedirectResponse("/report-form", status_code=302)
 
     return RedirectResponse("/", status_code=302)
-
 
 
 
