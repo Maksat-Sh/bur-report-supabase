@@ -3,37 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <title>Форма буровика</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 40px auto;
+        }
+        label { font-weight: bold; display: block; margin-top: 15px; }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 5px;
+            border: 1px solid #aaa;
+        }
+        button {
+            margin-top: 20px;
+            width: 100%;
+            padding: 12px;
+            background: dodgerblue;
+            color: white;
+            border: none;
+            font-size: 16px;
+            border-radius: 5px;
+        }
+    </style>
 </head>
 <body>
-<h2>Форма буровика</h2>
 
-<form method="post" action="/submit_report">
-    <label>Участок:</label>
-    <input type="text" name="location" required>
+<h2>Сводка буровика</h2>
 
-    <label>Номер бурового агрегата:</label>
-    <input type="text" name="rig_number" required>
+<form action="/submit_report" method="post">
 
-    <label>Метраж:</label>
-    <input type="number" step="0.01" name="meterage" required>
+    <label>Участок</label>
+    <input type="text" name="area" required>
 
-    <label>Погонометр:</label>
-    <input type="number" step="0.01" name="pogon" required>
+    <label>№ буровой установки</label>
+    <input type="text" name="rig" required>
 
-    <label>Виды операции:</label>
-    <input type="text" name="operation_type" required>
+    <label>Метраж</label>
+    <input type="number" name="meter" required>
 
-    <label>Ответственное лицо:</label>
-    <input type="text" name="responsible" required>
+    <label>Вид операции</label>
+    <input type="text" name="operation" required>
 
-    <label>Примечание:</label>
+    <label>Ответственное лицо</label>
+    <input type="text" name="person" required>
+
+    <label>Примечание</label>
     <textarea name="note"></textarea>
 
-    <button type="submit">Отправить сводку</button>
+    <button type="submit">Отправить</button>
 </form>
 
-<p><a href="/logout">Выйти</a></p>
+<br>
+<a href="/logout">Выйти</a>
 
 </body>
 </html>
