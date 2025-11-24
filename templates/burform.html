@@ -2,87 +2,38 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сводка буровика</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            background: #f4f4f4;
-        }
-        h2 {
-            text-align: center;
-        }
-        form {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            max-width: 500px;
-            margin: auto;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        label {
-            font-weight: bold;
-            display: block;
-            margin-top: 15px;
-        }
-        input, select, textarea {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border-radius: 5px;
-            border: 1px solid #aaa;
-        }
-        button {
-            margin-top: 20px;
-            width: 100%;
-            padding: 12px;
-            background: #007bff;
-            color: white;
-            font-size: 16px;
-            border: none;
-            border-radius: 6px;
-        }
-        .logout {
-            text-align: center;
-            margin-top: 20px;
-        }
-        .logout a { color: red; }
-    </style>
+    <title>Форма буровика</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-
 <h2>Форма буровика</h2>
 
-<form action="/submit_report" method="post">
+<form method="post" action="/submit_report">
+    <label>Участок:</label>
+    <input type="text" name="location" required>
 
-    <label>Участок</label>
-    <input type="text" name="site" required>
-
-    <label>№ бурового агрегата</label>
+    <label>Номер бурового агрегата:</label>
     <input type="text" name="rig_number" required>
 
-    <label>Метраж</label>
-    <input type="number" step="0.1" name="meterage" required>
+    <label>Метраж:</label>
+    <input type="number" step="0.01" name="meterage" required>
 
-    <label>Погонометр</label>
-    <input type="number" step="0.1" name="pogon" required>
+    <label>Погонометр:</label>
+    <input type="number" step="0.01" name="pogon" required>
 
-    <label>Вид операции</label>
-    <input type="text" name="operation" required>
+    <label>Виды операции:</label>
+    <input type="text" name="operation_type" required>
 
-    <label>Ответственное лицо</label>
-    <input type="text" name="person" required>
+    <label>Ответственное лицо:</label>
+    <input type="text" name="responsible" required>
 
-    <label>Примечание</label>
+    <label>Примечание:</label>
     <textarea name="note"></textarea>
 
     <button type="submit">Отправить сводку</button>
 </form>
 
-<div class="logout">
-    <a href="/logout">Выйти</a>
-</div>
+<p><a href="/logout">Выйти</a></p>
 
 </body>
 </html>
