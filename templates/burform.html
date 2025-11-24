@@ -7,123 +7,82 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background: #f5f5f5;
             padding: 20px;
+            background: #f4f4f4;
         }
-        .container {
-            max-width: 480px;
-            margin: auto;
+        h2 {
+            text-align: center;
+        }
+        form {
             background: white;
             padding: 20px;
             border-radius: 10px;
+            max-width: 500px;
+            margin: auto;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        input, select, textarea, button {
-            width: 100%;
-            padding: 10px;
-            margin-top: 10px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
-            font-size: 16px;
-        }
-        button {
-            background: #1976d2;
-            color: white;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #125ea9;
-        }
-        #success {
-            display: none;
-            color: green;
+        label {
             font-weight: bold;
+            display: block;
             margin-top: 15px;
         }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 5px;
+            border: 1px solid #aaa;
+        }
+        button {
+            margin-top: 20px;
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+        }
         .logout {
-            text-align: right;
-            margin-bottom: 10px;
+            text-align: center;
+            margin-top: 20px;
         }
-        .logout a {
-            color: #d32f2f;
-            text-decoration: none;
-        }
+        .logout a { color: red; }
     </style>
 </head>
 <body>
 
-<div class="container">
+<h2>Форма буровика</h2>
 
-    <div class="logout"><a href="/logout">Выйти</a></div>
+<form action="/submit_report" method="post">
 
-    <h2>Сводка буровика</h2>
+    <label>Участок</label>
+    <input type="text" name="site" required>
 
-    <form id="reportForm">
+    <label>№ бурового агрегата</label>
+    <input type="text" name="rig_number" required>
 
-        <label>Участок:</label>
-        <input type="text" id="uchastok" required>
+    <label>Метраж</label>
+    <input type="number" step="0.1" name="meterage" required>
 
-        <label>№ бурового агрегата:</label>
-        <input type="text" id="rig" required>
+    <label>Погонометр</label>
+    <input type="number" step="0.1" name="pogon" required>
 
-        <label>Метраж:</label>
-        <input type="number" id="metr" required>
+    <label>Вид операции</label>
+    <input type="text" name="operation" required>
 
-        <label>Погонометр:</label>
-        <input type="number" id="pogon" required>
+    <label>Ответственное лицо</label>
+    <input type="text" name="person" required>
 
-        <label>Вид операции:</label>
-        <input type="text" id="operation" required>
+    <label>Примечание</label>
+    <textarea name="note"></textarea>
 
-        <label>Ответственное лицо:</label>
-        <input type="text" id="person" required>
+    <button type="submit">Отправить сводку</button>
+</form>
 
-        <label>Примечание:</label>
-        <textarea id="note"></textarea>
-
-        <button type="submit">Отправить</button>
-
-        <div id="success">Отчёт отправлен!</div>
-
-    </form>
-
+<div class="logout">
+    <a href="/logout">Выйти</a>
 </div>
-
-<script>
-document.getElementById("reportForm").addEventListener("submit", async function(e) {
-    e.preventDefault();
-
-    const data = {
-        uchastok: document.getElementById("uchastok").value,
-        rig: document.getElementById("rig").value,
-        metr: document.getElementById("metr").value,
-        pogon: document.getElementById("pogon").value,
-        operation: document.getElementById("operation").value,
-        person: document.getElementById("person").value,
-        note: document.getElementById("note").value
-    };
-
-    const resp = await fetch("/submit_report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-    });
-
-    if (resp.ok) {
-        document.getElementById("success").style.display = "block";
-
-        // очищаем форму
-        document.getElementById("reportForm").reset();
-
-        // скрываем сообщение через 3 сек
-        setTimeout(() => {
-            document.getElementById("success").style.display = "none";
-        }, 3000);
-    } else {
-        alert("Ошибка отправки!");
-    }
-});
-</script>
 
 </body>
 </html>
