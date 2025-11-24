@@ -10,3 +10,4 @@ itsdangerous
 psycopg2-binary
 python-multipart
 asyncpg
+pandas
