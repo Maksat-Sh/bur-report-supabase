@@ -1,15 +1,16 @@
-from fastapi import FastAPI, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sqlite3
 import hashlib
 import pandas as pd
-from fastapi.responses import StreamingResponse
 from io import BytesIO
+import datetime
 
 app = FastAPI()
 
+# static + templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -21,6 +22,7 @@ def init_db():
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
 
+    # USERS
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +32,7 @@ def init_db():
     );
     """)
 
+    # REPORTS
     cur.execute("""
     CREATE TABLE IF NOT EXISTS reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,16 +49,16 @@ def init_db():
 
     conn.commit()
 
-    # create default users if empty
-    cur.execute("SELECT COUNT(*) FROM users;")
+    # Create default accounts if table empty
+    cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
-        print("Users table empty — creating default accounts")
+        print("Создаю учётки dispatcher и bur1")
 
-        u1 = ("dispatcher", hashlib.sha256("1234".encode()).hexdigest(), "dispatcher")
-        u2 = ("bur1", hashlib.sha256("123".encode()).hexdigest(), "bur")
+        dispatcher = ("dispatcher", hashlib.sha256("1234".encode()).hexdigest(), "dispatcher")
+        bur1 = ("bur1", hashlib.sha256("123".encode()).hexdigest(), "bur")
 
-        cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", u1)
-        cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", u2)
+        cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", dispatcher)
+        cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", bur1)
         conn.commit()
 
     conn.close()
@@ -92,10 +95,7 @@ async def login(username: str = Form(...), password: str = Form(...)):
     if not role:
         return RedirectResponse("/login", status_code=302)
 
-    if role == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-    else:
-        return RedirectResponse("/burform", status_code=302)
+    return RedirectResponse("/dispatcher" if role == "dispatcher" else "/burform", status_code=302)
 
 
 @app.get("/logout")
@@ -119,7 +119,6 @@ async def submit_report(
         responsible: str = Form(...),
         note: str = Form(...)
 ):
-    import datetime
     dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = sqlite3.connect(DB)
@@ -134,16 +133,16 @@ async def submit_report(
     return RedirectResponse("/burform", status_code=302)
 
 
-# ----------------------- DISPATCHER PAGE -----------------------
+# ----------------------- DISPATCHER -----------------------
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
     cur.execute("SELECT * FROM reports ORDER BY id DESC")
-    rows = cur.fetchall()
+    reports = cur.fetchall()
     conn.close()
 
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": rows})
+    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
 
 
 # ----------------------- USERS PAGE -----------------------
@@ -152,13 +151,13 @@ async def users_page(request: Request):
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
     cur.execute("SELECT username, role FROM users")
-    rows = cur.fetchall()
+    users = cur.fetchall()
     conn.close()
 
-    return templates.TemplateResponse("users.html", {"request": request, "users": rows})
+    return templates.TemplateResponse("users.html", {"request": request, "users": users})
 
 
-# ----------------------- EXPORT EXCEL -----------------------
+# ----------------------- EXPORT -----------------------
 @app.get("/export_excel")
 async def export_excel():
 
