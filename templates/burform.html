@@ -1,13 +1,129 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="ru">
 <head>
-<meta charset="utf-8" />
-<title>Форма буровика</title>
-<link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сводка буровика</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 480px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        input, select, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #125ea9;
+        }
+        #success {
+            display: none;
+            color: green;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+        .logout {
+            text-align: right;
+            margin-bottom: 10px;
+        }
+        .logout a {
+            color: #d32f2f;
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-<div class="card">
-<p>Пользователь: {{ user.full_name }} (<a href="/logout">выйти</a>)</p>
-{% if success %}<div class="success">{{ success }}</div>{% endif %}
-{% if error %}<div class="error">{{ error }}</div>{% endif %}
-<f
+
+<div class="container">
+
+    <div class="logout"><a href="/logout">Выйти</a></div>
+
+    <h2>Сводка буровика</h2>
+
+    <form id="reportForm">
+
+        <label>Участок:</label>
+        <input type="text" id="uchastok" required>
+
+        <label>№ бурового агрегата:</label>
+        <input type="text" id="rig" required>
+
+        <label>Метраж:</label>
+        <input type="number" id="metr" required>
+
+        <label>Погонометр:</label>
+        <input type="number" id="pogon" required>
+
+        <label>Вид операции:</label>
+        <input type="text" id="operation" required>
+
+        <label>Ответственное лицо:</label>
+        <input type="text" id="person" required>
+
+        <label>Примечание:</label>
+        <textarea id="note"></textarea>
+
+        <button type="submit">Отправить</button>
+
+        <div id="success">Отчёт отправлен!</div>
+
+    </form>
+
+</div>
+
+<script>
+document.getElementById("reportForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const data = {
+        uchastok: document.getElementById("uchastok").value,
+        rig: document.getElementById("rig").value,
+        metr: document.getElementById("metr").value,
+        pogon: document.getElementById("pogon").value,
+        operation: document.getElementById("operation").value,
+        person: document.getElementById("person").value,
+        note: document.getElementById("note").value
+    };
+
+    const resp = await fetch("/submit_report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+
+    if (resp.ok) {
+        document.getElementById("success").style.display = "block";
+
+        // очищаем форму
+        document.getElementById("reportForm").reset();
+
+        // скрываем сообщение через 3 сек
+        setTimeout(() => {
+            document.getElementById("success").style.display = "none";
+        }, 3000);
+    } else {
+        alert("Ошибка отправки!");
+    }
+});
+</script>
+
+</body>
+</html>
