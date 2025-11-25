@@ -27,7 +27,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Supabase REST config (from env)
 SUPABASE_URL = os.getenv("SUPABASE_URL")  # e.g. https://xxxx.supabase.co
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service_role or anon (service_role recommended for server)
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service_role recommended for server
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
 # password contexts
@@ -80,7 +80,6 @@ def init_sqlite():
     c = cur.fetchone()["c"]
     if c == 0:
         print("Users table empty — creating default accounts in SQLite")
-        # store sha256 hashed passwords for compatibility
         dispatcher_pw = hashlib.sha256("1234".encode()).hexdigest()
         bur1_pw = hashlib.sha256("123".encode()).hexdigest()
         cur.execute("INSERT INTO users (username, full_name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -167,23 +166,29 @@ async def startup_event():
             if not users:
                 print("Supabase users empty — creating default dispatcher and bur1")
                 # create dispatcher and bur1 with bcrypt
-                await supabase_post("users", {
-                    "username": "dispatcher",
-                    "full_name": "Диспетчер",
-                    "password_hash": pwd_context.hash("1234"),
-                    "role": "dispatcher",
-                    "created_at": datetime.utcnow().isoformat()
-                })
-                await supabase_post("users", {
-                    "username": "bur1",
-                    "full_name": "Буровик 1",
-                    "password_hash": pwd_context.hash("123"),
-                    "role": "driller",
-                    "created_at": datetime.utcnow().isoformat()
-                })
+                try:
+                    await supabase_post("users", {
+                        "username": "dispatcher",
+                        "full_name": "Диспетчер",
+                        "password_hash": pwd_context.hash("1234"),
+                        "role": "dispatcher",
+                        "created_at": datetime.utcnow().isoformat()
+                    })
+                except httpx.HTTPStatusError as e:
+                    # handle duplicate or other errors gracefully
+                    print("Could not insert dispatcher (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
+                try:
+                    await supabase_post("users", {
+                        "username": "bur1",
+                        "full_name": "Буровик 1",
+                        "password_hash": pwd_context.hash("123"),
+                        "role": "driller",
+                        "created_at": datetime.utcnow().isoformat()
+                    })
+                except httpx.HTTPStatusError as e:
+                    print("Could not insert bur1 (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
         except Exception as e:
             print("Supabase error during startup (fallback to sqlite):", e)
-            # fallback
             USE_SUPABASE = False
             USE_SQLITE = True
             init_sqlite()
@@ -237,7 +242,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
                 user = users[0]
         except Exception as e:
             print("Supabase read error during login, falling back to sqlite:", e)
-            # fallback: try sqlite below
             user = None
 
     if not user and USE_SQLITE:
@@ -247,7 +251,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
             cur.execute("SELECT * FROM users WHERE username = ?", (username,))
             r = cur.fetchone()
             if r:
-                # convert to dict-like
                 user = dict(r)
             conn.close()
         except Exception as e:
@@ -255,15 +258,12 @@ async def login(request: Request, username: str = Form(...), password: str = For
             user = None
 
     if not user:
-        # login page with error
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
-    # check password
-    stored_hash = user.get("password_hash") or user.get("password")  # some older schemas use 'password'
+    stored_hash = user.get("password_hash") or user.get("password")
     if not check_password_from_db(password, stored_hash):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # Save minimal safe info in session
     safe_user = {
         "id": user.get("id"),
         "username": user.get("username"),
@@ -272,7 +272,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
     }
     request.session["user"] = safe_user
 
-    # redirect by role
     if safe_user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     else:
@@ -289,7 +288,6 @@ async def logout(request: Request):
 @app.get("/burform", response_class=HTMLResponse)
 async def bur_form(request: Request):
     user = get_current_user(request)
-    # allow anonymous burform? We require login — if not logged in redirect
     if not user:
         return RedirectResponse("/login")
     return templates.TemplateResponse("burform.html", {"request": request, "user": user})
@@ -306,7 +304,6 @@ async def submit_report(
     note: str = Form("")
 ):
     created_at = datetime.utcnow().isoformat()
-    # prepare payload for Supabase or sqlite insertion
     payload = {
         "date": datetime.utcnow().date().isoformat(),
         "time": datetime.utcnow().time().strftime("%H:%M:%S"),
@@ -341,7 +338,6 @@ async def submit_report(
             except Exception as e2:
                 print("Failed to write report to SQLite fallback:", e2)
     else:
-        # sqlite
         try:
             conn = sqlite_connect()
             cur = conn.cursor()
@@ -377,7 +373,6 @@ async def dispatcher_page(request: Request, section: str | None = None):
             reports = await supabase_get("reports", params)
         except Exception as e:
             print("dispatcher_page supabase_get error:", e)
-            # fallback to sqlite read
             try:
                 conn = sqlite_connect()
                 cur = conn.cursor()
@@ -518,8 +513,16 @@ async def create_user(request: Request,
     if USE_SUPABASE:
         try:
             await supabase_post("users", payload)
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
+            # If duplicate username, return friendly error (avoid crash)
+            code = getattr(e.response, "status_code", None)
+            text = getattr(e.response, "text", "")
+            if code == 409 or (isinstance(text, str) and "duplicate" in text.lower()):
+                return JSONResponse({"error": "username already exists"}, status_code=400)
             print("create_user supabase_post error:", e)
+            return JSONResponse({"error": "Failed to create user in Supabase", "details": text}, status_code=500)
+        except Exception as e:
+            print("create_user supabase error:", e)
             return JSONResponse({"error": "Failed to create user in Supabase", "details": str(e)}, status_code=500)
     else:
         try:
