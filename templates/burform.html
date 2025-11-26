@@ -35,23 +35,26 @@
 
 <form action="/submit_report" method="post">
 
+    <label>Буровик (логин)</label>
+    <input type="text" name="bur" required>
+
     <label>Участок</label>
     <input type="text" name="section" required>
 
     <label>№ буровой установки</label>
-    <input type="text" name="rig" required>
+    <input type="text" name="bur_no" required>
 
     <label>Метраж</label>
-    <input type="number" name="meter" required>
+    <input type="number" name="footage" required>
 
     <label>Погонометр</label>
-    <input type="number" name="pogon" required>
+    <input type="number" name="pogonometr" required>
 
-    <label>Вид операции</label>
+    <label>Тип операции</label>
+    <input type="text" name="operation_type" required>
+
+    <label>Операция (описание)</label>
     <input type="text" name="operation" required>
-
-    <label>Ответственное лицо</label>
-    <input type="text" name="responsible" required>
 
     <label>Примечание</label>
     <textarea name="note"></textarea>
