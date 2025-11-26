@@ -289,27 +289,34 @@ async def bur_form(request: Request):
 @app.post("/submit_report")
 async def submit_report(
     request: Request,
-    area: str = Form(...),
-    rig: str = Form(...),
-    meter: str = Form(...),
-    pogon: str = Form(""),
+    bur: str = Form(...),
+    section: str = Form(...),         # участок
+    bur_no: str = Form(...),
+    pogonometr: float = Form(...),
+    footage: float = Form(...),
+    operation_type: str = Form(...),
     operation: str = Form(...),
-    person: str = Form(""),
-    note: str = Form("")
+    note: str = Form(...)
 ):
-    created_at = datetime.utcnow().isoformat()
-    payload = {
-        "date": datetime.utcnow().date().isoformat(),
-        "time": datetime.utcnow().time().strftime("%H:%M:%S"),
-        "section": area,
-        "rig_number": rig,
-        "meterage": meter,
-        "pogonometr": pogon,
-        "operation_type": operation,
-        "operator_name": person,
+    data = {
+        "bur": bur,
+        "location": section,           # <-- ВАЖНО! Участок теперь уходит в location
+        "bur_no": bur_no,
+        "pogonometr": pogonometr,
+        "footage": footage,
+        "operation_type": operation_type,
+        "operation": operation,
         "note": note,
-        "created_at": created_at
+        "created_at": datetime.utcnow().isoformat()
     }
+
+    try:
+        await supabase_post("reports", data)
+        return RedirectResponse("/burform?ok=1", status_code=302)
+    except Exception as e:
+        print("Failed to POST report:", e)
+        return RedirectResponse("/burform?fail=1", status_code=302)
+
 
     if USE_SUPABASE:
         try:
