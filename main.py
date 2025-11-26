@@ -73,7 +73,6 @@ def init_sqlite():
     conn.commit()
 
     # create default users if none
-    "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     cur.execute("SELECT COUNT(*) AS c FROM users")
     c = cur.fetchone()["c"]
     if c == 0:
