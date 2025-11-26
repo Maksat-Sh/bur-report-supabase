@@ -1,4 +1,4 @@
-# main.py — Supabase REST + fallback SQLite. Plain-text password support.
+# main.py — Supabase REST (preferred) + fallback SQLite — plain-text passwords in 'password' column
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,7 +11,6 @@ from datetime import datetime
 import io
 from openpyxl import Workbook
 import hashlib
-from passlib.context import CryptContext
 import typing
 import sqlite3
 import traceback
@@ -30,12 +29,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")  # e.g. https://xxxx.supabase.co
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service_role recommended for server
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
-# passlib for bcrypt verification support
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # sqlite fallback DB file
 SQLITE_DB = os.getenv("SQLITE_DB", "data.db")
-USE_SQLITE = False  # set to True if we fall back
+USE_SQLITE = False  # set True at startup if needed
 
 # -----------------------
 # SQLite helpers (fallback)
@@ -48,12 +44,12 @@ def sqlite_connect():
 def init_sqlite():
     conn = sqlite_connect()
     cur = conn.cursor()
+    # users table: we store plain password in 'password' column (per your request)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
         full_name TEXT,
-        password_hash TEXT,
         password TEXT,
         role TEXT,
         created_at TEXT
@@ -76,11 +72,12 @@ def init_sqlite():
     """)
     conn.commit()
 
-    # create default users if none (plain passwords in `password`)
+    # create default users if none
     cur.execute("SELECT COUNT(*) AS c FROM users")
     c = cur.fetchone()["c"]
     if c == 0:
-        print("Users table empty — creating default accounts in SQLite (plain passwords)")
+        print("Users table empty — creating default accounts in SQLite")
+        # plain passwords (as requested)
         cur.execute(
             "INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
             ("dispatcher", "Диспетчер", "1234", "dispatcher", datetime.utcnow().isoformat())
@@ -117,7 +114,6 @@ async def supabase_post(table: str, payload: dict) -> typing.Any:
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
-        # prefer return representation so we can get created object back
         "Prefer": "return=representation"
     }
     async with httpx.AsyncClient(timeout=20.0) as client:
@@ -132,15 +128,16 @@ def get_current_user(request: Request):
     return request.session.get("user")
 
 # -----------------------
-# Startup: test Supabase, else sqlite
+# Startup: test Supabase, else init sqlite
 # -----------------------
 @app.on_event("startup")
 async def startup_event():
     global USE_SUPABASE, USE_SQLITE
     if USE_SUPABASE:
         try:
+            # quick ping: try reading small users set
             async with httpx.AsyncClient(timeout=8.0) as client:
-                test_url = f"{SUPABASE_URL}/rest/v1/users?select=*&limit=1"
+                test_url = f"{SUPABASE_URL}/rest/v1/users?select=id&limit=1"
                 r = await client.get(test_url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
                 if r.status_code in (200, 206):
                     print("Supabase reachable — using Supabase REST.")
@@ -159,13 +156,12 @@ async def startup_event():
     if USE_SQLITE:
         init_sqlite()
 
-    # If Supabase and users table empty, attempt to create default users (plain passwords)
+    # If using Supabase: if users table empty -> create default users (plain password field 'password')
     if USE_SUPABASE:
         try:
             users = await supabase_get("users", "?select=id&limit=1")
             if not users:
                 print("Supabase users empty — creating default dispatcher and bur1 (plain passwords)")
-                # create plain passwords in `password` field (not hashed)
                 try:
                     await supabase_post("users", {
                         "username": "dispatcher",
@@ -175,8 +171,8 @@ async def startup_event():
                         "created_at": datetime.utcnow().isoformat()
                     })
                 except httpx.HTTPStatusError as e:
-                    # duplicate or constraint errors acceptable
-                    print("Could not insert dispatcher (maybe exists):", getattr(e.response, "status_code", None))
+                    # ignore duplicate / constraint errors
+                    print("Could not insert dispatcher (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
                 try:
                     await supabase_post("users", {
                         "username": "bur1",
@@ -186,7 +182,7 @@ async def startup_event():
                         "created_at": datetime.utcnow().isoformat()
                     })
                 except httpx.HTTPStatusError as e:
-                    print("Could not insert bur1 (maybe exists):", getattr(e.response, "status_code", None))
+                    print("Could not insert bur1 (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
         except Exception as e:
             print("Supabase error during startup (fallback to sqlite):", e)
             USE_SUPABASE = False
@@ -194,29 +190,27 @@ async def startup_event():
             init_sqlite()
 
 # -----------------------
-# Password check helper
+# Password check helper (supports plain-password, sha256 hex, bcrypt if present)
 # -----------------------
-def check_password_from_db(plain_password: str, stored: typing.Optional[str]) -> bool:
-    """
-    Accepts:
-      - bcrypt hashes (passlib)
-      - sha256 hex string (legacy)
-      - plain-text password stored in 'password' column or 'password_hash' if plain
-    """
-    if not stored:
+def check_password_from_db(plain_password: str, stored_value: typing.Optional[str]) -> bool:
+    if stored_value is None:
         return False
-    s = stored.strip()
-    # bcrypt style
+    s = stored_value.strip()
+    # 1) direct plain text match (we store plain passwords in 'password' column)
+    if s == plain_password:
+        return True
+    # 2) bcrypt-like (if someone inserted hashed)
     if s.startswith("$2a$") or s.startswith("$2b$") or s.startswith("$2y$"):
         try:
-            return pwd_context.verify(plain_password, s)
+            from passlib.context import CryptContext
+            ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            return ctx.verify(plain_password, s)
         except Exception:
-            return False
-    # sha256 hex
+            pass
+    # 3) hex sha256
     if len(s) == 64 and all(c in "0123456789abcdefABCDEF" for c in s):
         return hashlib.sha256(plain_password.encode()).hexdigest() == s.lower()
-    # otherwise compare plain text equality
-    return plain_password == s
+    return False
 
 # -----------------------
 # ROUTES
@@ -231,7 +225,7 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # First try Supabase
+    # Try Supabase first (if enabled), else sqlite
     user = None
     if USE_SUPABASE:
         try:
@@ -242,7 +236,6 @@ async def login(request: Request, username: str = Form(...), password: str = For
             print("Supabase read error during login, falling back to sqlite:", e)
             user = None
 
-    # fallback sqlite
     if not user and USE_SQLITE:
         try:
             conn = sqlite_connect()
@@ -259,12 +252,12 @@ async def login(request: Request, username: str = Form(...), password: str = For
     if not user:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
-    # stored password could be in password_hash or password field
-    stored_hash = user.get("password_hash") or user.get("password") or user.get("password_plain") or user.get("password_text")
-    if not check_password_from_db(password, stored_hash):
+    # prefer 'password' (plain) column, fallback to 'password_hash' if present
+    stored = user.get("password") or user.get("password_hash") or user.get("pw") or None
+    if not check_password_from_db(password, stored):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
-    # Save minimal safe info in session
+    # Save safe user info in session
     safe_user = {
         "id": user.get("id"),
         "username": user.get("username"),
@@ -374,6 +367,7 @@ async def dispatcher_page(request: Request, section: str | None = None):
             reports = await supabase_get("reports", params)
         except Exception as e:
             print("dispatcher_page supabase_get error:", e)
+            # fallback to sqlite
             try:
                 conn = sqlite_connect()
                 cur = conn.cursor()
@@ -472,6 +466,7 @@ async def users_page(request: Request):
     users = []
     if USE_SUPABASE:
         try:
+            # select plain 'password' column is not returned for security, but we can list accounts
             users = await supabase_get("users", "?select=id,username,full_name,role,created_at")
         except Exception as e:
             print("users_page supabase_get error:", e)
@@ -490,7 +485,7 @@ async def users_page(request: Request):
     return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": users})
 
 # -----------------------
-# Create user (dispatcher)
+# Create user (dispatcher) — stores plain password in 'password' column
 # -----------------------
 @app.post("/create_user")
 async def create_user(request: Request,
@@ -505,8 +500,7 @@ async def create_user(request: Request,
     payload = {
         "username": username,
         "full_name": full_name,
-        # store plain password per your request
-        "password": password,
+        "password": password,   # plain text per request
         "role": role,
         "created_at": datetime.utcnow().isoformat()
     }
@@ -517,9 +511,10 @@ async def create_user(request: Request,
         except httpx.HTTPStatusError as e:
             code = getattr(e.response, "status_code", None)
             text = getattr(e.response, "text", "")
+            # duplicate username
             if code == 409 or (isinstance(text, str) and "duplicate" in text.lower()):
                 return JSONResponse({"error": "username already exists"}, status_code=400)
-            print("create_user supabase_post error:", e)
+            # null constraint on password or other SQL errors -> surface the message
             return JSONResponse({"error": "Failed to create user in Supabase", "details": text}, status_code=500)
         except Exception as e:
             print("create_user supabase error:", e)
