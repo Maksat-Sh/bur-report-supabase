@@ -73,6 +73,7 @@ def init_sqlite():
     conn.commit()
 
     # create default users if none
+    "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     cur.execute("SELECT COUNT(*) AS c FROM users")
     c = cur.fetchone()["c"]
     if c == 0:
@@ -80,11 +81,11 @@ def init_sqlite():
         # plain passwords (as requested)
         cur.execute(
             "INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            ("dispatcher", "Диспетчер", "1234", "dispatcher", datetime.utcnow().isoformat())
+            ("dispatcher", "Диспетчер", "1234", "dispatcher", datetime.utcnow().isoformat()+Z)
         )
         cur.execute(
             "INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            ("bur1", "Буровик 1", "123", "driller", datetime.utcnow().isoformat())
+            ("bur1", "Буровик 1", "123", "driller", datetime.utcnow().isoformat()+Z)
         )
         conn.commit()
     conn.close()
