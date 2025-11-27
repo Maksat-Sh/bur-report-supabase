@@ -97,18 +97,21 @@ async def submit_report(
     note: str = Form(...)
 ):
 
-    data = {
-        "bur": bur,
-        "section": section,
-        "location": location,
-        "bur_no": bur_no,
-        "pogonometr": pogonometr,
-        "footage": footage,
-        "operation_type": operation_type,
-        "operation": operation,
-        "note": note,
-        "created_at": datetime.utcnow().isoformat()
-    }
+    location = section  # <==== вот эта строка решает ошибку
+
+data = {
+    "bur": bur,
+    "section": section,
+    "location": location,
+    "bur_no": bur_no,
+    "pogonometr": pogonometr,
+    "footage": footage,
+    "operation_type": operation_type,
+    "operation": operation,
+    "note": note,
+    "created_at": datetime.utcnow().isoformat()
+}
+
 
     print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
     print(data)
