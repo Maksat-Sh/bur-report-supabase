@@ -301,6 +301,7 @@ async def submit_report(
     data = {
         "bur": bur,
         "section": section,           # <-- ВАЖНО! Участок теперь уходит в location
+        "location": section,
         "bur_no": bur_no,
         "pogonometr": pogonometr,
         "footage": footage,
