@@ -298,66 +298,30 @@ async def submit_report(
     operation: str = Form(...),
     note: str = Form(...)
 ):
-    #data = {
-     #   "bur": bur,
-      #  "section": section,           # <-- ВАЖНО! Участок теперь уходит в location
-       # "location": section,
-        #"bur_no": bur_no,
-        #"pogonometr": pogonometr,
-        #"footage": footage,
-        #"operation_type": operation_type,
-        #"operation": operation,
-        #"note": note,
-        #"created_at": datetime.utcnow().isoformat()
-    #}
-#print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
-#print(data)
-#print("================================================")
- #   try:
-  #      await supabase_post("reports", data)
-   #     return RedirectResponse("/burform?ok=1", status_code=302)
-    #except Exception as e:
-     #   print("Failed to POST report:", e)
-      #  return RedirectResponse("/burform?fail=1", status_code=302)
+       # Подготовка данных для Supabase
+    data = {
+        "bur": bur,
+        "section": section,
+        "location": section,       # <-- И ТУТ ПРАВИЛЬНО
+        "bur_no": bur_no,
+        "pogonometr": pogonometr,
+        "footage": footage,
+        "operation_type": operation_type,
+        "operation": operation,
+        "note": note,
+        "created_at": datetime.utcnow().isoformat()
+    }
 
+    print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
+    print(data)
+    print("================================================")
 
-    #if USE_SUPABASE:
-     #   try:
-      #      await supabase_post("reports", payload)
-       # except Exception as e:
-        #    print("Failed to POST report to Supabase:", e)
-            # fallback to sqlite
-         #   try:
-          #      conn = sqlite_connect()
-           #     cur = conn.cursor()
-            #    cur.execute(
-             #       """INSERT INTO reports (date, time, section, rig_number, meterage, pogonometr, operation_type, operator_name, note, created_at)
-              #         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-               #     (payload["date"], payload["time"], payload["section"], payload["rig_number"],
-                #     payload["meterage"], payload["pogonometr"], payload["operation_type"],
-                 #    payload["operator_name"], payload["note"], payload["created_at"])
-                #)
-               # conn.commit()
-                #conn.close()
-            #except Exception as e2:
-             #   print("Failed to write report to SQLite fallback:", e2)
-    #else:
-     #   try:
-      #      conn = sqlite_connect()
-       #     cur = conn.cursor()
-        #    cur.execute(
-         #       """INSERT INTO reports (date, time, section, rig_number, meterage, pogonometr, operation_type, operator_name, note, created_at)
-          #         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-           #     (payload["date"], payload["time"], payload["section"], payload["rig_number"],
-            #     payload["meterage"], payload["pogonometr"], payload["operation_type"],
-             #    payload["operator_name"], payload["note"], payload["created_at"])
-            #)
-            #conn.commit()
-            #conn.close()
-       # except Exception as e:
-        #    print("SQLite report insert error:", e)
-
-    #return RedirectResponse("/burform", status_code=302)
+    try:
+        await supabase_post("reports", data)
+        return RedirectResponse("/burform?ok=1", status_code=302)
+    except Exception as e:
+        print("Failed to POST report:", e)
+        return RedirectResponse("/burform?fail=1", status_code=302)
 
 # -----------------------
 # Dispatcher page
