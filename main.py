@@ -1,296 +1,69 @@
-# main.py — Supabase REST (preferred) + fallback SQLite — plain-text passwords in 'password' column
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, Request, Form, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-import httpx
-import os
-from dotenv import load_dotenv
+import requests
 from datetime import datetime
-import io
-from openpyxl import Workbook
-import hashlib
-import typing
-import sqlite3
-import traceback
-
-load_dotenv()
+import os
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "supersecretkey"))
 
-# templates + static
-templates = Jinja2Templates(directory="templates")
+# --- SESSION ---
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+
+# --- STATIC ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Supabase REST config (from env)
-SUPABASE_URL = os.getenv("SUPABASE_URL")  # e.g. https://xxxx.supabase.co
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service_role recommended for server
-USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
+SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# sqlite fallback DB file
-SQLITE_DB = os.getenv("SQLITE_DB", "data.db")
-USE_SQLITE = False  # set True at startup if needed
 
-# -----------------------
-# SQLite helpers (fallback)
-# -----------------------
-def sqlite_connect():
-    conn = sqlite3.connect(SQLITE_DB, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_sqlite():
-    conn = sqlite_connect()
-    cur = conn.cursor()
-    # users table: we store plain password in 'password' column (per your request)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        full_name TEXT,
-        password TEXT,
-        role TEXT,
-        created_at TEXT
-    );
-    """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        section TEXT,
-        rig_number TEXT,
-        meterage TEXT,
-        pogonometr TEXT,
-        operation_type TEXT,
-        operator_name TEXT,
-        note TEXT,
-        created_at TEXT
-    );
-    """)
-    conn.commit()
-
-    # create default users if none
-    cur.execute("SELECT COUNT(*) AS c FROM users")
-    c = cur.fetchone()["c"]
-    if c == 0:
-        print("Users table empty — creating default accounts in SQLite")
-        # plain passwords (as requested)
-        cur.execute(
-            "INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            ("dispatcher", "Диспетчер", "1234", "dispatcher", datetime.utcnow().isoformat()+Z)
-        )
-        cur.execute(
-            "INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            ("bur1", "Буровик 1", "123", "driller", datetime.utcnow().isoformat()+Z)
-        )
-        conn.commit()
-    conn.close()
-
-# -----------------------
-# Supabase (HTTP) helpers
-# -----------------------
-async def supabase_get(table: str, params: str = "") -> typing.Any:
-    if not USE_SUPABASE:
-        raise RuntimeError("Supabase not configured")
-    url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Accept": "application/json"
-    }
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        r = await client.get(url, headers=headers)
-        r.raise_for_status()
-        return r.json()
-
-async def supabase_post(table: str, payload: dict) -> typing.Any:
-    if not USE_SUPABASE:
-        raise RuntimeError("Supabase not configured")
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    }
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        r = await client.post(url, headers=headers, json=payload)
-        r.raise_for_status()
-        return r.json()
-
-# -----------------------
-# Utility: current user
-# -----------------------
-def get_current_user(request: Request):
+def get_user(request: Request):
     return request.session.get("user")
 
-# -----------------------
-# Startup: test Supabase, else init sqlite
-# -----------------------
-@app.on_event("startup")
-async def startup_event():
-    global USE_SUPABASE, USE_SQLITE
-    if USE_SUPABASE:
-        try:
-            # quick ping: try reading small users set
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                test_url = f"{SUPABASE_URL}/rest/v1/users?select=id&limit=1"
-                r = await client.get(test_url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
-                if r.status_code in (200, 206):
-                    print("Supabase reachable — using Supabase REST.")
-                    USE_SQLITE = False
-                else:
-                    print("Supabase returned status", r.status_code, "— falling back to SQLite")
-                    USE_SUPABASE = False
-                    USE_SQLITE = True
-        except Exception as e:
-            print("Supabase connect/create error:", e)
-            USE_SUPABASE = False
-            USE_SQLITE = True
-    else:
-        USE_SQLITE = True
 
-    if USE_SQLITE:
-        init_sqlite()
-
-    # If using Supabase: if users table empty -> create default users (plain password field 'password')
-    if USE_SUPABASE:
-        try:
-            users = await supabase_get("users", "?select=id&limit=1")
-            if not users:
-                print("Supabase users empty — creating default dispatcher and bur1 (plain passwords)")
-                try:
-                    await supabase_post("users", {
-                        "username": "dispatcher",
-                        "full_name": "Диспетчер",
-                        "password": "1234",
-                        "role": "dispatcher",
-                       "created_at": datetime.now(timezone.utc).isoformat()
-                    })
-                except httpx.HTTPStatusError as e:
-                    # ignore duplicate / constraint errors
-                    print("Could not insert dispatcher (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
-                try:
-                    await supabase_post("users", {
-                        "username": "bur1",
-                        "full_name": "Буровик 1",
-                        "password": "123",
-                        "role": "driller",
-                      "created_at": datetime.now(timezone.utc).isoformat()
-                    })
-                except httpx.HTTPStatusError as e:
-                    print("Could not insert bur1 (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
-        except Exception as e:
-            print("Supabase error during startup (fallback to sqlite):", e)
-            USE_SUPABASE = False
-            USE_SQLITE = True
-            init_sqlite()
-
-# -----------------------
-# Password check helper (supports plain-password, sha256 hex, bcrypt if present)
-# -----------------------
-def check_password_from_db(plain_password: str, stored_value: typing.Optional[str]) -> bool:
-    if stored_value is None:
-        return False
-    s = stored_value.strip()
-    # 1) direct plain text match (we store plain passwords in 'password' column)
-    if s == plain_password:
-        return True
-    # 2) bcrypt-like (if someone inserted hashed)
-    if s.startswith("$2a$") or s.startswith("$2b$") or s.startswith("$2y$"):
-        try:
-            from passlib.context import CryptContext
-            ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            return ctx.verify(plain_password, s)
-        except Exception:
-            pass
-    # 3) hex sha256
-    if len(s) == 64 and all(c in "0123456789abcdefABCDEF" for c in s):
-        return hashlib.sha256(plain_password.encode()).hexdigest() == s.lower()
-    return False
-
-# -----------------------
-# ROUTES
-# -----------------------
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse("/login")
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+# ==========================
+# LOGIN / LOGOUT
+# ==========================
+@app.get("/login")
+async def login_page():
+    return HTMLResponse(open("templates/login.html", encoding="utf-8").read())
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # Try Supabase first (if enabled), else sqlite
-    user = None
-    if USE_SUPABASE:
-        try:
-            users = await supabase_get("users", f"?select=*&username=eq.{username}")
-            if users:
-                user = users[0]
-        except Exception as e:
-            print("Supabase read error during login, falling back to sqlite:", e)
-            user = None
-
-    if not user and USE_SQLITE:
-        try:
-            conn = sqlite_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM users WHERE username = ?", (username,))
-            r = cur.fetchone()
-            if r:
-                user = dict(r)
-            conn.close()
-        except Exception as e:
-            print("SQLite read error:", e)
-            user = None
-
-    if not user:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
-
-    # prefer 'password' (plain) column, fallback to 'password_hash' if present
-    stored = user.get("password") or user.get("password_hash") or user.get("pw") or None
-    if not check_password_from_db(password, stored):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
-
-    # Save safe user info in session
-    safe_user = {
-        "id": user.get("id"),
-        "username": user.get("username"),
-        "full_name": user.get("full_name") or user.get("fio") or user.get("username"),
-        "role": user.get("role") or user.get("roles") or "driller"
-    }
-    request.session["user"] = safe_user
-
-    if safe_user["role"] == "dispatcher":
+    if username == "dispatcher" and password == "1234":
+        request.session["user"] = "dispatcher"
         return RedirectResponse("/dispatcher", status_code=302)
-    else:
+
+    if username == "bur" and password == "1111":
+        request.session["user"] = "bur"
         return RedirectResponse("/burform", status_code=302)
+
+    return RedirectResponse("/login?error=1", status_code=302)
+
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login", status_code=302)
+    return RedirectResponse("/login")
 
-# -----------------------
-# Bur form (driller)
-# -----------------------
-@app.get("/burform", response_class=HTMLResponse)
-async def bur_form(request: Request):
-    user = get_current_user(request)
-    if not user:
+
+# ==========================
+# BUR FORM
+# ==========================
+@app.get("/burform")
+async def burform_page(request: Request, user=Depends(get_user)):
+    if user != "bur":
         return RedirectResponse("/login")
-    return templates.TemplateResponse("burform.html", {"request": request, "user": user})
+    return HTMLResponse(open("templates/burform.html", encoding="utf-8").read())
+
 
 @app.post("/submit_report")
 async def submit_report(
     request: Request,
     bur: str = Form(...),
-    section: str = Form(...),         # участок
+    section: str = Form(...),
+    location: str = Form(...),
     bur_no: str = Form(...),
     pogonometr: float = Form(...),
     footage: float = Form(...),
@@ -298,230 +71,74 @@ async def submit_report(
     operation: str = Form(...),
     note: str = Form(...)
 ):
-       # Подготовка данных для Supabase
-  from datetime import datetime, timezone
+    # === Приводим числовые поля к int (как в вашей БД) ===
+    pogonometr = int(pogonometr)
+    footage = int(footage)
 
-data = {
-    "bur": bur,
-    "section": section,
-    "location": section,
-    "bur_no": bur_no,
-    "pogonometr": int(float(pogonometr)) if pogonometr else None,
-    "footage": int(float(footage)) if footage else None,
-    "operation_type": operation_type,
-    "operation": operation,
-    "note": note,
-    "created_at": datetime.now(timezone.utc).isoformat()
-}
+    # === Готовим структуру точь-в-точь как в Supabase ===
+    data = {
+        "bur": bur,
+        "section": section,
+        "location": location,
+        "bur_no": bur_no,
+        "pogonometr": pogonometr,
+        "footage": footage,
+        "operation_type": operation_type,
+        "operation": operation,
+        "note": note,
+        "created_at": datetime.utcnow().isoformat()
+    }
 
+    # === Отправка в Supabase ===
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
 
-    print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
+    print("\n=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
     print(data)
     print("================================================")
 
-    try:
-        await supabase_post("reports", data)
-        return RedirectResponse("/burform?ok=1", status_code=302)
-    except Exception as e:
-        print("Failed to POST report:", e)
-        return RedirectResponse("/burform?fail=1", status_code=302)
-
-# -----------------------
-# Dispatcher page
-# -----------------------
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request, section: str | None = None):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
-        return RedirectResponse("/login")
-
-    reports = []
-    if USE_SUPABASE:
-        try:
-            params = "?select=*&order=created_at.desc"
-            if section:
-                params = f"?select=*&order=created_at.desc&section=eq.{section}"
-            reports = await supabase_get("reports", params)
-        except Exception as e:
-            print("dispatcher_page supabase_get error:", e)
-            # fallback to sqlite
-            try:
-                conn = sqlite_connect()
-                cur = conn.cursor()
-                cur.execute("SELECT * FROM reports ORDER BY id DESC")
-                rows = [dict(r) for r in cur.fetchall()]
-                conn.close()
-                reports = rows
-            except Exception as e2:
-                print("dispatcher_page sqlite read error:", e2)
-                reports = []
-    else:
-        try:
-            conn = sqlite_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM reports ORDER BY id DESC")
-            rows = [dict(r) for r in cur.fetchall()]
-            conn.close()
-            reports = rows
-        except Exception as e:
-            print("dispatcher_page sqlite read error:", e)
-            reports = []
-
-    sites = ['', 'Хорасан', 'Заречное', 'Карамурын', 'Ирколь', 'Степногорск']
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "user": user, "reports": reports, "sites": sites, "selected_site": section or ""})
-
-# -----------------------
-# Export Excel
-# -----------------------
-@app.get("/export_excel")
-async def export_excel(request: Request, section: str | None = None):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
-        return RedirectResponse("/login")
-
-    reports = []
-    if USE_SUPABASE:
-        try:
-            params = "?select=*&order=created_at.desc"
-            if section:
-                params = f"?select=*&order=created_at.desc&section=eq.{section}"
-            reports = await supabase_get("reports", params)
-        except Exception as e:
-            print("export_excel supabase_get error:", e)
-            reports = []
-    else:
-        try:
-            conn = sqlite_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM reports ORDER BY id DESC")
-            reports = [dict(r) for r in cur.fetchall()]
-            conn.close()
-        except Exception as e:
-            print("export_excel sqlite read error:", e)
-            reports = []
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "reports"
-    ws.append([
-        "ID", "Дата UTC", "Участок", "Номер агрегата", "Метраж", "Погонометр",
-        "Операция", "Автор", "Примечание"
-    ])
-    for r in reports:
-        created = r.get("created_at") or ""
-        ws.append([
-            r.get("id"),
-            created,
-            r.get("section") or r.get("location"),
-            r.get("rig_number"),
-            r.get("meterage"),
-            r.get("pogonometr"),
-            r.get("operation_type") or r.get("operation"),
-            r.get("operator_name"),
-            r.get("note") or ""
-        ])
-
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    filename = f"reports_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return StreamingResponse(
-        stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    response = requests.post(
+        f"{SUPABASE_URL}/rest/v1/reports",
+        json=data,
+        headers=headers
     )
 
-# -----------------------
-# Users page (dispatcher)
-# -----------------------
-@app.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request):
-    user = get_current_user(request)
-    if not user or user.get("role") != "dispatcher":
+    if response.status_code >= 300:
+        print("Failed to POST report:", response.text)
+
+    return RedirectResponse("/burform?success=1", status_code=302)
+
+
+# ==========================
+# DISPATCHER PAGE
+# ==========================
+@app.get("/dispatcher")
+async def dispatcher_page(request: Request, user=Depends(get_user)):
+    if user != "dispatcher":
         return RedirectResponse("/login")
+    return HTMLResponse(open("templates/dispatcher.html", encoding="utf-8").read())
 
-    users = []
-    if USE_SUPABASE:
-        try:
-            # select plain 'password' column is not returned for security, but we can list accounts
-            users = await supabase_get("users", "?select=id,username,full_name,role,created_at")
-        except Exception as e:
-            print("users_page supabase_get error:", e)
-            users = []
-    else:
-        try:
-            conn = sqlite_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT id, username, full_name, role, created_at FROM users")
-            users = [dict(r) for r in cur.fetchall()]
-            conn.close()
-        except Exception as e:
-            print("users_page sqlite read error:", e)
-            users = []
 
-    return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": users})
+# ==========================
+# API — GET REPORTS
+# ==========================
+@app.get("/api/reports")
+async def api_reports(request: Request, user=Depends(get_user)):
+    if user != "dispatcher":
+        return {"error": "Unauthorized"}
 
-# -----------------------
-# Create user (dispatcher) — stores plain password in 'password' column
-# -----------------------
-@app.post("/create_user")
-async def create_user(request: Request,
-                      username: str = Form(...),
-                      full_name: str = Form(""),
-                      password: str = Form(...),
-                      role: str = Form("driller")):
-    admin = get_current_user(request)
-    if not admin or admin.get("role") != "dispatcher":
-        return RedirectResponse("/login")
-
-    payload = {
-        "username": username,
-        "full_name": full_name,
-        "password": password,   # plain text per request
-        "role": role,
-        "created_at": datetime.now(timezone.utc).isoformat()
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
     }
 
-    if USE_SUPABASE:
-        try:
-            await supabase_post("users", payload)
-        except httpx.HTTPStatusError as e:
-            code = getattr(e.response, "status_code", None)
-            text = getattr(e.response, "text", "")
-            # duplicate username
-            if code == 409 or (isinstance(text, str) and "duplicate" in text.lower()):
-                return JSONResponse({"error": "username already exists"}, status_code=400)
-            # null constraint on password or other SQL errors -> surface the message
-            return JSONResponse({"error": "Failed to create user in Supabase", "details": text}, status_code=500)
-        except Exception as e:
-            print("create_user supabase error:", e)
-            return JSONResponse({"error": "Failed to create user in Supabase", "details": str(e)}, status_code=500)
-    else:
-        try:
-            conn = sqlite_connect()
-            cur = conn.cursor()
-            cur.execute("INSERT INTO users (username, full_name, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                        (username, full_name, password, role, payload["created_at"]))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print("create_user sqlite error:", e)
-            return JSONResponse({"error": "Failed to create user in SQLite", "details": str(e)}, status_code=500)
+    response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/reports?select=*",
+        headers=headers
+    )
 
-    return RedirectResponse("/users", status_code=303)
-
-# -----------------------
-# Healthcheck
-# -----------------------
-@app.get("/ping")
-def ping():
-    return {"status": "ok", "use_supabase": USE_SUPABASE}
-
-# -----------------------
-# Friendly error handler for debugging (optional)
-# -----------------------
-@app.exception_handler(Exception)
-async def all_exception_handler(request: Request, exc: Exception):
-    print("Unhandled exception:", exc)
-    traceback.print_exc()
-    return JSONResponse({"error": str(exc)}, status_code=500)
+    return response.json()
