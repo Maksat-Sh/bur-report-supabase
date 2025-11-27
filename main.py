@@ -21,9 +21,7 @@ app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# -----------------------------------------------------------
-#  Pydantic model — удалено поле location (его нет в форме)
-# -----------------------------------------------------------
+# ---------- REPORT MODEL ----------
 class Report(BaseModel):
     bur: str
     section: str
@@ -36,22 +34,11 @@ class Report(BaseModel):
     created_at: datetime
 
 
-# -----------------------------------------------------------
-#  AUTH HELPERS
-# -----------------------------------------------------------
-def get_current_user(request: Request):
-    return request.session.get("user")
-
-
+# ---------- AUTH ----------
 def require_login(request: Request):
-    if "user" not in request.session:
-        return False
-    return True
+    return "user" in request.session
 
 
-# -----------------------------------------------------------
-#  ROUTES
-# -----------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/login")
@@ -64,12 +51,12 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # диспетчер всегда логин: admin
+    # диспетчер
     if username == "admin" and password == "1234":
         request.session["user"] = "admin"
         return RedirectResponse("/dispatcher", status_code=302)
 
-    # буровики входят без базы — допускаем вход с любым именем
+    # буровик
     if password == "0000":
         request.session["user"] = username
         return RedirectResponse("/burform", status_code=302)
@@ -83,9 +70,7 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# -----------------------------------------------------------
-#  ФОРМА БУРОВИКА
-# -----------------------------------------------------------
+# ---------- БУРОВАЯ ФОРМА ----------
 @app.get("/burform", response_class=HTMLResponse)
 async def burform(request: Request):
     if not require_login(request):
@@ -93,9 +78,7 @@ async def burform(request: Request):
     return templates.TemplateResponse("burform.html", {"request": request})
 
 
-# -----------------------------------------------------------
-#  ПРИЕМ СВОДКИ ОТ БУРОВИКА
-# -----------------------------------------------------------
+# ---------- ПРИЕМ СВОДКИ ----------
 @app.post("/submit_report")
 async def submit_report(
     request: Request,
@@ -108,7 +91,7 @@ async def submit_report(
     operation: str = Form(...),
     note: str = Form(...),
 ):
-    # готовим данные точно в формате Supabase
+
     data = {
         "bur": bur,
         "section": section,
@@ -139,7 +122,7 @@ async def submit_report(
             )
 
             if resp.status_code >= 300:
-                print(f"Failed to POST report: {resp.status_code} — {resp.text}")
+                print("SUPABASE ERROR:", resp.status_code, resp.text)
                 return RedirectResponse("/burform?fail=1", status_code=302)
 
         except Exception as e:
@@ -149,9 +132,7 @@ async def submit_report(
     return RedirectResponse("/burform?ok=1", status_code=302)
 
 
-# -----------------------------------------------------------
-#  СТРАНИЦА ДИСПЕТЧЕРА
-# -----------------------------------------------------------
+# ---------- ДИСПЕТЧЕР ----------
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     if not require_login(request):
@@ -160,12 +141,7 @@ async def dispatcher(request: Request):
     return templates.TemplateResponse("dispatcher.html", {"request": request})
 
 
-# лишний маршрут /users удалён! 
-
-
-# -----------------------------------------------------------
-#  STARTUP CHECK
-# -----------------------------------------------------------
+# ---------- STARTUP ----------
 @app.on_event("startup")
 async def startup_event():
     print("Supabase REST ready:", SUPABASE_URL)
