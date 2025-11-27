@@ -1,61 +1,86 @@
 from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-import requests
+import httpx
 from datetime import datetime
 import os
 
 app = FastAPI()
 
-# --- SESSION ---
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+# ========================
+#   CONFIG
+# ========================
+app.add_middleware(SessionMiddleware, secret_key="supersecret123")
 
-# --- STATIC ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json"
+}
+
+# Диспетчер логин/пароль
+ADMIN_USER = "dispatcher"
+ADMIN_PASS = "1234"
 
 
-def get_user(request: Request):
-    return request.session.get("user")
+# ========================
+#   ROUTES
+# ========================
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return RedirectResponse("/login")
 
 
-# ==========================
-# LOGIN / LOGOUT
-# ==========================
-@app.get("/login")
-async def login_page():
-    return HTMLResponse(open("templates/login.html", encoding="utf-8").read())
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == "dispatcher" and password == "1234":
+    if username == ADMIN_USER and password == ADMIN_PASS:
         request.session["user"] = "dispatcher"
         return RedirectResponse("/dispatcher", status_code=302)
 
-    if username == "bur" and password == "1111":
-        request.session["user"] = "bur"
-        return RedirectResponse("/burform", status_code=302)
-
-    return RedirectResponse("/login?error=1", status_code=302)
+    # Буровик — всегда заходит без логина
+    request.session["user"] = "bur"
+    return RedirectResponse("/burform", status_code=302)
 
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
+    return RedirectResponse("/login", status_code=302)
 
 
-# ==========================
-# BUR FORM
-# ==========================
-@app.get("/burform")
-async def burform_page(request: Request, user=Depends(get_user)):
-    if user != "bur":
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    if request.session.get("user") != "dispatcher":
         return RedirectResponse("/login")
-    return HTMLResponse(open("templates/burform.html", encoding="utf-8").read())
+
+    return templates.TemplateResponse("dispatcher.html", {"request": request})
+
+
+@app.get("/burform", response_class=HTMLResponse)
+async def burform(request: Request):
+    return templates.TemplateResponse("burform.html", {"request": request})
 
 
 @app.post("/submit_report")
@@ -71,11 +96,7 @@ async def submit_report(
     operation: str = Form(...),
     note: str = Form(...)
 ):
-    # === Приводим числовые поля к int (как в вашей БД) ===
-    pogonometr = int(pogonometr)
-    footage = int(footage)
 
-    # === Готовим структуру точь-в-точь как в Supabase ===
     data = {
         "bur": bur,
         "section": section,
@@ -89,56 +110,34 @@ async def submit_report(
         "created_at": datetime.utcnow().isoformat()
     }
 
-    # === Отправка в Supabase ===
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-    }
-
-    print("\n=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
+    print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
     print(data)
     print("================================================")
 
-    response = requests.post(
-        f"{SUPABASE_URL}/rest/v1/reports",
-        json=data,
-        headers=headers
-    )
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{SUPABASE_URL}/rest/v1/reports",
+            headers=HEADERS,
+            json=data
+        )
 
     if response.status_code >= 300:
-        print("Failed to POST report:", response.text)
+        print("Failed to POST report:", response.status_code, response.text)
+        return RedirectResponse("/burform?fail=1", status_code=302)
 
-    return RedirectResponse("/burform?success=1", status_code=302)
-
-
-# ==========================
-# DISPATCHER PAGE
-# ==========================
-@app.get("/dispatcher")
-async def dispatcher_page(request: Request, user=Depends(get_user)):
-    if user != "dispatcher":
-        return RedirectResponse("/login")
-    return HTMLResponse(open("templates/dispatcher.html", encoding="utf-8").read())
+    return RedirectResponse("/burform?ok=1", status_code=302)
 
 
-# ==========================
-# API — GET REPORTS
-# ==========================
+# Получение всех отчётов для диспетчера
 @app.get("/api/reports")
-async def api_reports(request: Request, user=Depends(get_user)):
-    if user != "dispatcher":
+async def get_reports(request: Request):
+    if request.session.get("user") != "dispatcher":
         return {"error": "Unauthorized"}
 
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-    }
-
-    response = requests.get(
-        f"{SUPABASE_URL}/rest/v1/reports?select=*",
-        headers=headers
-    )
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/reports?select=*",
+            headers=HEADERS
+        )
 
     return response.json()
