@@ -310,7 +310,9 @@ async def submit_report(
         "note": note,
         "created_at": datetime.utcnow().isoformat()
     }
-
+print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
+print(data)
+print("================================================")
     try:
         await supabase_post("reports", data)
         return RedirectResponse("/burform?ok=1", status_code=302)
