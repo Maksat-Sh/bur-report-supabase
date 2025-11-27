@@ -168,7 +168,7 @@ async def startup_event():
                         "full_name": "Диспетчер",
                         "password": "1234",
                         "role": "dispatcher",
-                        "created_at": datetime.utcnow().isoformat()
+                       "created_at": datetime.now(timezone.utc).isoformat()
                     })
                 except httpx.HTTPStatusError as e:
                     # ignore duplicate / constraint errors
@@ -179,7 +179,7 @@ async def startup_event():
                         "full_name": "Буровик 1",
                         "password": "123",
                         "role": "driller",
-                        "created_at": datetime.utcnow().isoformat()
+                      "created_at": datetime.now(timezone.utc).isoformat()
                     })
                 except httpx.HTTPStatusError as e:
                     print("Could not insert bur1 (maybe exists):", e.response.status_code, getattr(e.response, "text", ""))
@@ -299,18 +299,21 @@ async def submit_report(
     note: str = Form(...)
 ):
        # Подготовка данных для Supabase
-    data = {
-        "bur": bur,
-        "section": section,
-        "location": section,       # <-- И ТУТ ПРАВИЛЬНО
-        "bur_no": bur_no,
-        "pogonometr": pogonometr,
-        "footage": footage,
-        "operation_type": operation_type,
-        "operation": operation,
-        "note": note,
-        "created_at": datetime.utcnow().isoformat()
-    }
+  from datetime import datetime, timezone
+
+data = {
+    "bur": bur,
+    "section": section,
+    "location": section,
+    "bur_no": bur_no,
+    "pogonometr": int(float(pogonometr)) if pogonometr else None,
+    "footage": int(float(footage)) if footage else None,
+    "operation_type": operation_type,
+    "operation": operation,
+    "note": note,
+    "created_at": datetime.now(timezone.utc).isoformat()
+}
+
 
     print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
     print(data)
@@ -476,7 +479,7 @@ async def create_user(request: Request,
         "full_name": full_name,
         "password": password,   # plain text per request
         "role": role,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
     if USE_SUPABASE:
