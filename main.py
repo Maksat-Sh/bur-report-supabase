@@ -1,8 +1,7 @@
-from fastapi import FastAPI, Request, Form, Depends
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from datetime import datetime
@@ -16,7 +15,7 @@ SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 templates = Jinja2Templates(directory="templates")
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey123")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -51,16 +50,18 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # диспетчер
+
+    # ---- Dispatcher login ----
     if username == "admin" and password == "1234":
         request.session["user"] = "admin"
         return RedirectResponse("/dispatcher", status_code=302)
 
-    # буровик
+    # ---- Driller login ----
     if password == "0000":
         request.session["user"] = username
         return RedirectResponse("/burform", status_code=302)
 
+    # ---- Invalid ----
     return RedirectResponse("/login?error=1", status_code=302)
 
 
@@ -70,15 +71,16 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# ---------- БУРОВАЯ ФОРМА ----------
+# ---------- BUR FORM ----------
 @app.get("/burform", response_class=HTMLResponse)
 async def burform(request: Request):
     if not require_login(request):
         return RedirectResponse("/login")
+
     return templates.TemplateResponse("burform.html", {"request": request})
 
 
-# ---------- ПРИЕМ СВОДКИ ----------
+# ---------- REPORT SUBMIT ----------
 @app.post("/submit_report")
 async def submit_report(
     request: Request,
@@ -101,12 +103,11 @@ async def submit_report(
         "operation_type": operation_type,
         "operation": operation,
         "note": note,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
     }
 
-    print("=== REPORT DATA BEFORE SENDING TO SUPABASE ===")
+    print("=== SENDING REPORT TO SUPABASE ===")
     print(data)
-    print("================================================")
 
     async with httpx.AsyncClient() as client:
         try:
@@ -126,13 +127,13 @@ async def submit_report(
                 return RedirectResponse("/burform?fail=1", status_code=302)
 
         except Exception as e:
-            print("ERROR SENDING REPORT:", e)
+            print("ERROR:", e)
             return RedirectResponse("/burform?fail=1", status_code=302)
 
     return RedirectResponse("/burform?ok=1", status_code=302)
 
 
-# ---------- ДИСПЕТЧЕР ----------
+# ---------- DISPATCHER ----------
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     if not require_login(request):
