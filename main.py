@@ -1,16 +1,19 @@
 import os
 import requests
-from fastapi import FastAPI, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from openpyxl import Workbook
-from fastapi.responses import StreamingResponse
-from io import BytesIO
 from passlib.context import CryptContext
 from datetime import datetime
+from openpyxl import Workbook
+from io import BytesIO
+
+# ------------------------------------
+# BASE APP
+# ------------------------------------
 
 app = FastAPI()
 
@@ -32,50 +35,58 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# -----------------------
-#   HELPERS
-# -----------------------
+# ------------------------------------
+# SUPABASE REQUEST HELPERS
+# ------------------------------------
 
 def sb_select(table, filters=""):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
-    return requests.get(url, headers={"apikey": SUPABASE_API_KEY, "Authorization": f"Bearer {SUPABASE_API_KEY}"}).json()
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    if filters:
+        url += f"?{filters}"
+
+    resp = requests.get(url, headers={
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}"
+    })
+
+    try:
+        return resp.json()
+    except:
+        return []
 
 
 def sb_insert(table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    return requests.post(url, json=data, headers={
+    resp = requests.post(url, json=data, headers={
         "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=representation"
-    }).json()
+    })
+    return resp.json()
 
 
-def sb_update(table, filters, data):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
-    return requests.patch(url, json=data, headers={
-        "apikey": SUPABASE_API_KEY,
-        "Authorization": f"Bearer {SUPABASE_API_KEY}",
-        "Content-Type": "application/json"
-    }).json()
+# ------------------------------------
+# ROOT
+# ------------------------------------
 
-
-# -----------------------
-#   LOGIN
-# -----------------------
-
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+@app.get("/")
+async def root():
     return RedirectResponse("/login")
 
 
+# ------------------------------------
+# LOGIN / LOGOUT
+# ------------------------------------
+
 @app.get("/login", response_class=HTMLResponse)
-async def login(request: Request, error: int = 0):
+async def login_page(request: Request, error: int = 0):
     return templates.TemplateResponse("login.html", {"request": request, "error": error})
 
 
 @app.post("/login")
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+
     users = sb_select("users", f"username=eq.{username}")
 
     if not users:
@@ -106,9 +117,9 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# -----------------------
-#   BUR FORM
-# -----------------------
+# ------------------------------------
+# BUR FORM PAGE
+# ------------------------------------
 
 @app.get("/burform", response_class=HTMLResponse)
 async def burform(request: Request):
@@ -120,14 +131,13 @@ async def burform(request: Request):
 
 
 @app.post("/submit_report")
-async def submit_report(
-        request: Request,
-        operation_type: str = Form(...),
-        operation: str = Form(...),
-        footage: int = Form(...),
-        pogonometr: int = Form(...),
-        note: str = Form("")
-):
+async def submit_report(request: Request,
+                        operation_type: str = Form(...),
+                        operation: str = Form(...),
+                        footage: int = Form(...),
+                        pogonometr: int = Form(...),
+                        note: str = Form("")):
+
     user = request.session.get("user")
     if not user:
         return RedirectResponse("/login")
@@ -141,8 +151,7 @@ async def submit_report(
         "note": note,
         "section": user["section"],
         "bur": user["full_name"],
-        "bur_no": user["username"],
-        "location": user["section"]
+        "bur_no": user["username"]
     }
 
     sb_insert("reports", data)
@@ -150,9 +159,9 @@ async def submit_report(
     return RedirectResponse("/burform?success=1", status_code=302)
 
 
-# -----------------------
-#   DISPATCHER PAGE
-# -----------------------
+# ------------------------------------
+# DISPATCHER PAGE
+# ------------------------------------
 
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request, section: str = ""):
@@ -172,9 +181,9 @@ async def dispatcher(request: Request, section: str = ""):
     })
 
 
-# -----------------------
-#   EXPORT EXCEL
-# -----------------------
+# ------------------------------------
+# EXPORT EXCEL
+# ------------------------------------
 
 @app.get("/export_excel")
 async def export_excel():
@@ -182,12 +191,22 @@ async def export_excel():
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["Дата", "Участок", "Буровик", "Агрегат", "Метраж", "Погонометр", "Операция", "Тип", "Примечание"])
+    ws.append([
+        "Дата", "Участок", "Буровик", "Агрегат", "Метраж",
+        "Погонометр", "Операция", "Тип операции", "Примечание"
+    ])
 
     for r in reports:
         ws.append([
-            r["created_at"], r["section"], r["bur"], r["bur_no"],
-            r["footage"], r["pogonometr"], r["operation"], r["operation_type"], r["note"]
+            r.get("created_at", ""),
+            r.get("section", ""),
+            r.get("bur", ""),
+            r.get("bur_no", ""),
+            r.get("footage", ""),
+            r.get("pogonometr", ""),
+            r.get("operation", ""),
+            r.get("operation_type", ""),
+            r.get("note", "")
         ])
 
     stream = BytesIO()
@@ -201,9 +220,9 @@ async def export_excel():
     )
 
 
-# -----------------------
-#   USERS PAGE
-# -----------------------
+# ------------------------------------
+# USERS LIST + CREATE USER
+# ------------------------------------
 
 @app.get("/users", response_class=HTMLResponse)
 async def users_page(request: Request):
@@ -212,18 +231,16 @@ async def users_page(request: Request):
         return RedirectResponse("/login")
 
     users = sb_select("users", "order=id.asc")
-
     return templates.TemplateResponse("users.html", {"request": request, "users": users})
 
 
 @app.post("/create_user")
-async def create_user(
-        username: str = Form(...),
-        password: str = Form(...),
-        full_name: str = Form(...),
-        role: str = Form(...),
-        section: str = Form("")
-):
+async def create_user(username: str = Form(...),
+                      password: str = Form(...),
+                      full_name: str = Form(...),
+                      role: str = Form(...),
+                      section: str = Form("")):
+
     password_hash = pwd_context.hash(password)
 
     sb_insert("users", {
