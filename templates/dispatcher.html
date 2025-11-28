@@ -1,29 +1,62 @@
-<!doctype html>
-<html><head><meta charset="utf-8"><title>Диспетчер</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><div class="card"><h1>Диспетчер</h1>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Диспетчер</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
 
-<form method="get" action="/dispatcher">
-  <label>Фильтр по участку:
-    <select name="section">
-      {% for s in sites %}<option value="{{ s }}" {% if s==selected_site %}selected{% endif %}>{{ s }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit">Применить</button>
-</form>
-<p><a href="/export_excel{% if selected_site %}?section={{ selected_site }}{% endif %}">Скачать в Excel</a> | <a href="/users"><button type="button">Пользователи</button></a></p>
-<table class="reports"><thead><tr><th>ID</th><th>Дата UTC</th><th>Участок</th><th>Номер</th><th>Метраж</th><th>Погонометр</th><th>Операция</th><th>Автор</th><th>Примечание</th></tr></thead><tbody>
-{% for r in reports %}
-  <tr>
-    <td>{{ r.id }}</td>
-    <td>{{ r.created_at or r.timestamp }}</td>
-    <td>{{ r.section }}</td>
-    <td>{{ r.rig_number }}</td>
-    <td>{{ r.meterage }}</td>
-    <td>{{ r.pogonometr }}</td>
-    <td>{{ r.operation_type }}</td>
-    <td>{{ r.operator_name }}</td>
-    <td>{{ r.note }}</td>
-     <td>{{ r.bur }}</td>
-  </tr>
-{% endfor %}
-</tbody></table></div></body></html>
+<h2>Интерфейс диспетчера</h2>
+
+<div class="top-controls">
+    <form method="GET" action="/dispatcher">
+        <label>Фильтр по участку:</label>
+        <select name="section">
+            <option value="">Все</option>
+            <option value="Хорасан">Хорасан</option>
+            <option value="Карамурын">Карамурын</option>
+            <option value="Ирколь">Ирколь</option>
+            <option value="Заречное">Заречное</option>
+            <option value="Семизбай">Семизбай</option>
+        </select>
+        <button type="submit">Фильтровать</button>
+    </form>
+
+    <a href="/export_excel" class="btn">📄 Скачать Excel</a>
+    <a href="/users" class="btn">👤 Пользователи</a>
+    <a href="/logout" class="btn logout">Выйти</a>
+</div>
+
+<table border="1" cellpadding="5" cellspacing="0">
+    <tr>
+        <th>ID</th>
+        <th>Дата/время</th>
+        <th>Участок</th>
+        <th>№ бур.установки</th>
+        <th>Метраж</th>
+        <th>Погонометр</th>
+        <th>Тип операции</th>
+        <th>Операция</th>
+        <th>Ответственное лицо</th>
+        <th>Примечание</th>
+    </tr>
+
+    {% for r in reports %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.section }}</td>
+        <td>{{ r.bur_no }}</td>
+        <td>{{ r.footage }}</td>
+        <td>{{ r.pogonometr }}</td>
+        <td>{{ r.operation_type }}</td>
+        <td>{{ r.operation }}</td>
+        <td>{{ r.bur }}</td>
+        <td>{{ r.note }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+</body>
+</html>
