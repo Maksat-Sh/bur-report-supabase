@@ -1,156 +1,239 @@
-import os
-import httpx
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+import io
+import pandas as pd
+from datetime import datetime
+from supabase import create_client, Client
 
+import os
+from passlib.context import CryptContext
+
+# -----------------------------
+# ИНИЦИАЛИЗАЦИЯ
+# -----------------------------
 app = FastAPI()
 
-# === ВАЖНО ===
-# Эти переменные ОБЯЗАТЕЛЬНО должны быть заполнены на Render
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey123")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise Exception("SUPABASE_URL или SUPABASE_KEY не установлены!")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json"
-}
-
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
-
-templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# ---------------------- USERS -----------------------------
-
-async def get_user(username: str):
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SUPABASE_URL}/rest/v1/users",
-            headers=headers,
-            params={"select": "*", "username": f"eq.{username}"}
-        )
-        data = resp.json()
-        return data[0] if data else None
+# -----------------------------
+#  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# -----------------------------
+def hash_password(password: str):
+    return pwd_context.hash(password)
 
 
-async def create_user(username: str, password: str, role: str):
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            f"{SUPABASE_URL}/rest/v1/users",
-            headers=headers,
-            json={"username": username, "password": password, "role": role}
-        )
+def verify_password(password: str, hashed: str):
+    return pwd_context.verify(password, hashed)
 
 
-# ---------------------- ROUTES -----------------------------
+def require_login(session):
+    if "user" not in session:
+        return False
+    return True
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+
+# -----------------------------
+#  LOGIN PAGE
+# -----------------------------
+@app.get("/", response_class=RedirectResponse)
+def root():
     return RedirectResponse("/login")
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+def login_page(request: Request, error: int = 0):
+    return templates.TemplateResponse("login.html", {"request": request, "error": error})
 
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    user = await get_user(username)
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    user = supabase.table("users").select("*").eq("username", username).execute()
 
-    if not user or user["password"] != password:
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": "Неверный логин или пароль"
-        })
+    if len(user.data) == 0:
+        return RedirectResponse("/login?error=1", status_code=302)
 
-    request.session["user"] = user
+    user = user.data[0]
+
+    if not verify_password(password, user["password_hash"]):
+        return RedirectResponse("/login?error=1", status_code=302)
+
+    # Save session
+    request.session["user"] = {
+        "id": user["id"],
+        "username": user["username"],
+        "full_name": user["full_name"],
+        "role": user["role"],
+        "section": user.get("section", "")
+    }
+
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     else:
         return RedirectResponse("/burform", status_code=302)
 
 
-@app.get("/logout")
-async def logout(request: Request):
+@app.get("/logout", response_class=RedirectResponse)
+def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
 
 
-# ---------------------- BURFORM -----------------------------
-
+# -----------------------------
+#     ФОРМА БУРОВИКА
+# -----------------------------
 @app.get("/burform", response_class=HTMLResponse)
-async def burform(request: Request):
-    user = request.session.get("user")
-    if not user:
+def burform(request: Request):
+    if not require_login(request.session):
         return RedirectResponse("/login")
 
-    return templates.TemplateResponse("burform.html", {"request": request})
-
-
-@app.post("/burform")
-async def submit_burform(
-    request: Request,
-    uchastok: str = Form(...),
-    rig: str = Form(...),
-    metrazh: str = Form(...),
-    pogon: str = Form(...),
-    operation: str = Form(...),
-    responsible: str = Form(...),
-    note: str = Form(...)
-):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse("/login")
-
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            f"{SUPABASE_URL}/rest/v1/reports",
-            headers=headers,
-            json={
-                "username": user["username"],
-                "uchastok": uchastok,
-                "rig": rig,
-                "metrazh": metrazh,
-                "pogon": pogon,
-                "operation": operation,
-                "responsible": responsible,
-                "note": note
-            }
-        )
+    user = request.session["user"]
 
     return templates.TemplateResponse("burform.html", {
         "request": request,
-        "success": "Сводка отправлена!"
+        "full_name": user["full_name"],  # буровика ФИО
+        "section": user["section"]       # участок буровика
     })
 
 
-# ---------------------- DISPATCHER -----------------------------
-
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] != "dispatcher":
+@app.post("/submit_report")
+def submit_report(
+        request: Request,
+        operation_type: str = Form(...),
+        operation: str = Form(...),
+        footage: int = Form(...),
+        pogonometr: int = Form(...),
+        note: str = Form(""),
+):
+    if not require_login(request.session):
         return RedirectResponse("/login")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{SUPABASE_URL}/rest/v1/reports",
-            headers=headers,
-            params={"select": "*"}
-        )
+    user = request.session["user"]
 
-    reports = resp.json()
+    supabase.table("reports").insert({
+        "created_at": datetime.utcnow().isoformat(),
+        "bur": user["full_name"],
+        "location": user["section"],
+        "operation_type": operation_type,
+        "operation": operation,
+        "footage": footage,
+        "pogonometr": pogonometr,
+        "note": note,
+        "section": user["section"],
+        "bur_no": user["username"]
+    }).execute()
+
+    return RedirectResponse("/burform?success=1", status_code=302)
+
+
+# -----------------------------
+#     ДИСПЕТЧЕРСКАЯ
+# -----------------------------
+@app.get("/dispatcher", response_class=HTMLResponse)
+def dispatcher(request: Request, section: str = None):
+    if not require_login(request.session):
+        return RedirectResponse("/login")
+
+    user = request.session["user"]
+    if user["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    query = supabase.table("reports").select("*")
+
+    if section:
+        query = query.eq("section", section)
+
+    reports = query.order("id", desc=True).execute().data
 
     return templates.TemplateResponse("dispatcher.html", {
         "request": request,
-        "reports": reports
+        "reports": reports,
+        "section_filter": section
     })
+
+
+# -----------------------------
+#     ЭКСПОРТ В EXCEL
+# -----------------------------
+@app.get("/export_excel")
+def export_excel(request: Request):
+    if not require_login(request.session):
+        return RedirectResponse("/login")
+
+    user = request.session["user"]
+    if user["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    data = supabase.table("reports").select("*").execute().data
+    df = pd.DataFrame(data)
+
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
+    )
+
+
+# -----------------------------
+#     СТРАНИЦА ПОЛЬЗОВАТЕЛЕЙ
+# -----------------------------
+@app.get("/users", response_class=HTMLResponse)
+def users_page(request: Request):
+    if not require_login(request.session):
+        return RedirectResponse("/login")
+
+    user = request.session["user"]
+    if user["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    users = supabase.table("users").select("*").execute().data
+
+    return templates.TemplateResponse("users.html", {
+        "request": request,
+        "users": users
+    })
+
+
+@app.post("/users/create")
+def create_user(
+        username: str = Form(...),
+        password: str = Form(...),
+        full_name: str = Form(...),
+        section: str = Form(...),
+        role: str = Form(...)
+):
+    supabase.table("users").insert({
+        "username": username,
+        "password_hash": hash_password(password),
+        "full_name": full_name,
+        "section": section,
+        "role": role,
+        "created_at": datetime.utcnow().isoformat()
+    }).execute()
+
+    return RedirectResponse("/users", status_code=302)
