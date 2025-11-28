@@ -1,23 +1,20 @@
+import os
+import requests
 from fastapi import FastAPI, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-import io
-import pandas as pd
-from datetime import datetime
-from supabase import create_client, Client
-
-import os
+from openpyxl import Workbook
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 from passlib.context import CryptContext
+from datetime import datetime
 
-# -----------------------------
-# ИНИЦИАЛИЗАЦИЯ
-# -----------------------------
 app = FastAPI()
 
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey123")
+app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,66 +23,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# -----------------------
+#   HELPERS
+# -----------------------
 
-
-# -----------------------------
-#  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# -----------------------------
-def hash_password(password: str):
-    return pwd_context.hash(password)
+def sb_select(table, filters=""):
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
+    return requests.get(url, headers={"apikey": SUPABASE_API_KEY, "Authorization": f"Bearer {SUPABASE_API_KEY}"}).json()
 
 
-def verify_password(password: str, hashed: str):
-    return pwd_context.verify(password, hashed)
+def sb_insert(table, data):
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    return requests.post(url, json=data, headers={
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }).json()
 
 
-def require_login(session):
-    if "user" not in session:
-        return False
-    return True
+def sb_update(table, filters, data):
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
+    return requests.patch(url, json=data, headers={
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+        "Content-Type": "application/json"
+    }).json()
 
 
-# -----------------------------
-#  LOGIN PAGE
-# -----------------------------
-@app.get("/", response_class=RedirectResponse)
-def root():
+# -----------------------
+#   LOGIN
+# -----------------------
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
     return RedirectResponse("/login")
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, error: int = 0):
+async def login(request: Request, error: int = 0):
     return templates.TemplateResponse("login.html", {"request": request, "error": error})
 
 
 @app.post("/login")
-def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    user = supabase.table("users").select("*").eq("username", username).execute()
+async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    users = sb_select("users", f"username=eq.{username}")
 
-    if len(user.data) == 0:
+    if not users:
         return RedirectResponse("/login?error=1", status_code=302)
 
-    user = user.data[0]
+    user = users[0]
 
-    if not verify_password(password, user["password_hash"]):
+    if not pwd_context.verify(password, user["password_hash"]):
         return RedirectResponse("/login?error=1", status_code=302)
 
-    # Save session
     request.session["user"] = {
         "id": user["id"],
         "username": user["username"],
-        "full_name": user["full_name"],
         "role": user["role"],
-        "section": user.get("section", "")
+        "full_name": user["full_name"],
+        "section": user["section"]
     }
 
     if user["role"] == "dispatcher":
@@ -94,146 +100,139 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         return RedirectResponse("/burform", status_code=302)
 
 
-@app.get("/logout", response_class=RedirectResponse)
-def logout(request: Request):
+@app.get("/logout")
+async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
 
 
-# -----------------------------
-#     ФОРМА БУРОВИКА
-# -----------------------------
+# -----------------------
+#   BUR FORM
+# -----------------------
+
 @app.get("/burform", response_class=HTMLResponse)
-def burform(request: Request):
-    if not require_login(request.session):
+async def burform(request: Request):
+    user = request.session.get("user")
+    if not user or user["role"] != "bur":
         return RedirectResponse("/login")
 
-    user = request.session["user"]
-
-    return templates.TemplateResponse("burform.html", {
-        "request": request,
-        "full_name": user["full_name"],  # буровика ФИО
-        "section": user["section"]       # участок буровика
-    })
+    return templates.TemplateResponse("burform.html", {"request": request, "user": user})
 
 
 @app.post("/submit_report")
-def submit_report(
+async def submit_report(
         request: Request,
         operation_type: str = Form(...),
         operation: str = Form(...),
         footage: int = Form(...),
         pogonometr: int = Form(...),
-        note: str = Form(""),
+        note: str = Form("")
 ):
-    if not require_login(request.session):
+    user = request.session.get("user")
+    if not user:
         return RedirectResponse("/login")
 
-    user = request.session["user"]
-
-    supabase.table("reports").insert({
+    data = {
         "created_at": datetime.utcnow().isoformat(),
-        "bur": user["full_name"],
-        "location": user["section"],
         "operation_type": operation_type,
         "operation": operation,
         "footage": footage,
         "pogonometr": pogonometr,
         "note": note,
         "section": user["section"],
-        "bur_no": user["username"]
-    }).execute()
+        "bur": user["full_name"],
+        "bur_no": user["username"],
+        "location": user["section"]
+    }
+
+    sb_insert("reports", data)
 
     return RedirectResponse("/burform?success=1", status_code=302)
 
 
-# -----------------------------
-#     ДИСПЕТЧЕРСКАЯ
-# -----------------------------
+# -----------------------
+#   DISPATCHER PAGE
+# -----------------------
+
 @app.get("/dispatcher", response_class=HTMLResponse)
-def dispatcher(request: Request, section: str = None):
-    if not require_login(request.session):
+async def dispatcher(request: Request, section: str = ""):
+    user = request.session.get("user")
+    if not user or user["role"] != "dispatcher":
         return RedirectResponse("/login")
-
-    user = request.session["user"]
-    if user["role"] != "dispatcher":
-        return RedirectResponse("/login")
-
-    query = supabase.table("reports").select("*")
 
     if section:
-        query = query.eq("section", section)
-
-    reports = query.order("id", desc=True).execute().data
+        reports = sb_select("reports", f"section=eq.{section}&order=created_at.desc")
+    else:
+        reports = sb_select("reports", "order=created_at.desc")
 
     return templates.TemplateResponse("dispatcher.html", {
         "request": request,
         "reports": reports,
-        "section_filter": section
+        "selected_section": section
     })
 
 
-# -----------------------------
-#     ЭКСПОРТ В EXCEL
-# -----------------------------
+# -----------------------
+#   EXPORT EXCEL
+# -----------------------
+
 @app.get("/export_excel")
-def export_excel(request: Request):
-    if not require_login(request.session):
-        return RedirectResponse("/login")
+async def export_excel():
+    reports = sb_select("reports", "order=created_at.desc")
 
-    user = request.session["user"]
-    if user["role"] != "dispatcher":
-        return RedirectResponse("/login")
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Дата", "Участок", "Буровик", "Агрегат", "Метраж", "Погонометр", "Операция", "Тип", "Примечание"])
 
-    data = supabase.table("reports").select("*").execute().data
-    df = pd.DataFrame(data)
+    for r in reports:
+        ws.append([
+            r["created_at"], r["section"], r["bur"], r["bur_no"],
+            r["footage"], r["pogonometr"], r["operation"], r["operation_type"], r["note"]
+        ])
 
-    output = io.BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
 
     return StreamingResponse(
-        output,
+        stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
     )
 
 
-# -----------------------------
-#     СТРАНИЦА ПОЛЬЗОВАТЕЛЕЙ
-# -----------------------------
+# -----------------------
+#   USERS PAGE
+# -----------------------
+
 @app.get("/users", response_class=HTMLResponse)
-def users_page(request: Request):
-    if not require_login(request.session):
+async def users_page(request: Request):
+    user = request.session.get("user")
+    if not user or user["role"] != "dispatcher":
         return RedirectResponse("/login")
 
-    user = request.session["user"]
-    if user["role"] != "dispatcher":
-        return RedirectResponse("/login")
+    users = sb_select("users", "order=id.asc")
 
-    users = supabase.table("users").select("*").execute().data
-
-    return templates.TemplateResponse("users.html", {
-        "request": request,
-        "users": users
-    })
+    return templates.TemplateResponse("users.html", {"request": request, "users": users})
 
 
-@app.post("/users/create")
-def create_user(
+@app.post("/create_user")
+async def create_user(
         username: str = Form(...),
         password: str = Form(...),
         full_name: str = Form(...),
-        section: str = Form(...),
-        role: str = Form(...)
+        role: str = Form(...),
+        section: str = Form("")
 ):
-    supabase.table("users").insert({
+    password_hash = pwd_context.hash(password)
+
+    sb_insert("users", {
         "username": username,
-        "password_hash": hash_password(password),
         "full_name": full_name,
-        "section": section,
         "role": role,
+        "section": section,
+        "password_hash": password_hash,
         "created_at": datetime.utcnow().isoformat()
-    }).execute()
+    })
 
     return RedirectResponse("/users", status_code=302)
