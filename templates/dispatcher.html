@@ -7,55 +7,49 @@
 </head>
 <body>
 
-<h2>Интерфейс диспетчера</h2>
+<h2>Сводки буровиков</h2>
 
-<div class="top-controls">
-    <form method="GET" action="/dispatcher">
+<div class="top-menu">
+    <form method="get" action="/dispatcher">
         <label>Фильтр по участку:</label>
-        <select name="section">
-            <option value="">Все</option>
-            <option value="Хорасан">Хорасан</option>
-            <option value="Карамурын">Карамурын</option>
-            <option value="Ирколь">Ирколь</option>
-            <option value="Заречное">Заречное</option>
-            <option value="Семизбай">Семизбай</option>
-        </select>
+        <input type="text" name="section" value="{{ selected_section }}">
         <button type="submit">Фильтровать</button>
     </form>
 
-    <a href="/export_excel" class="btn">📄 Скачать Excel</a>
-    <a href="/users" class="btn">👤 Пользователи</a>
-    <a href="/logout" class="btn logout">Выйти</a>
+    <a class="btn" href="/export_excel">Экспорт в Excel</a>
+    <a class="btn" href="/users">Пользователи</a>
+    <a class="btn logout" href="/logout">Выйти</a>
 </div>
 
-<table border="1" cellpadding="5" cellspacing="0">
+<table>
+    <thead>
     <tr>
-        <th>ID</th>
-        <th>Дата/время</th>
+        <th>Дата</th>
         <th>Участок</th>
-        <th>№ бур.установки</th>
+        <th>Буровик</th>
+        <th>Агрегат</th>
         <th>Метраж</th>
         <th>Погонометр</th>
-        <th>Тип операции</th>
         <th>Операция</th>
-        <th>Ответственное лицо</th>
+        <th>Тип</th>
         <th>Примечание</th>
     </tr>
-
+    </thead>
+    <tbody>
     {% for r in reports %}
-    <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.created_at }}</td>
-        <td>{{ r.section }}</td>
-        <td>{{ r.bur_no }}</td>
-        <td>{{ r.footage }}</td>
-        <td>{{ r.pogonometr }}</td>
-        <td>{{ r.operation_type }}</td>
-        <td>{{ r.operation }}</td>
-        <td>{{ r.bur }}</td>
-        <td>{{ r.note }}</td>
-    </tr>
+        <tr>
+            <td>{{ r.created_at }}</td>
+            <td>{{ r.section }}</td>
+            <td>{{ r.bur }}</td>
+            <td>{{ r.bur_no }}</td>
+            <td>{{ r.footage }}</td>
+            <td>{{ r.pogonometr }}</td>
+            <td>{{ r.operation }}</td>
+            <td>{{ r.operation_type }}</td>
+            <td>{{ r.note }}</td>
+        </tr>
     {% endfor %}
+    </tbody>
 </table>
 
 </body>
