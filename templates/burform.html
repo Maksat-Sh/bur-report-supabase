@@ -1,46 +1,94 @@
+<!-- templates/burform.html -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Сводка буровика</title>
+    <meta charset="utf-8">
+    <title>Форма буровика</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+      .small { font-size: 0.9rem; color: #666; }
+      .row { margin-top: 10px; }
+    </style>
 </head>
 <body>
+  <div class="container">
+    <h2>Сводка буровика</h2>
 
-<h2>Сводка буровика</h2>
+    {% if request.query_params.get("ok") %}
+      <p style="color:green;">Сводка отправлена успешно</p>
+    {% elif request.query_params.get("fail") %}
+      <p style="color:red;">Ошибка при отправке сводки</p>
+    {% endif %}
 
-{% if request.query_params.get("success") %}
-<div class="alert success">Сводка успешно отправлена!</div>
-{% endif %}
+    <form action="/submit_report" method="post">
+      <div class="row">
+        <label>Дата / Время (UTC)</label>
+        <input type="text" name="created_at_display" value="{{ (now()|default(None)) }}" readonly
+               id="dt" />
+      </div>
 
-<form method="post" action="/submit_report">
+      <div class="row">
+        <label>Участок</label>
+        <select name="section" required>
+          <option value="">-- выберите участок --</option>
+          {% for s in sections %}
+            <option value="{{ s }}" {% if user.section == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-    <label>Тип операции:</label>
-    <select name="operation_type" required>
-        <option value="Бурение">Бурение</option>
-        <option value="Подъём">Подъём</option>
-        <option value="Спуск">Спуск</option>
-        <option value="Простой">Простой</option>
-    </select>
+      <div class="row">
+        <label>Номер буровой установки (агрегат)</label>
+        <input type="text" name="bur_no" value="{{ user.username }}" readonly>
+      </div>
 
-    <label>Вид операции:</label>
-    <input type="text" name="operation" placeholder="Например: бурение породы" required>
+      <div class="row">
+        <label>Метраж</label>
+        <input type="number" step="0.1" name="footage" required>
+      </div>
 
-    <label>Метраж (м):</label>
-    <input type="number" name="footage" required>
+      <div class="row">
+        <label>Погонометр</label>
+        <input type="number" step="0.1" name="pogonometr" required>
+      </div>
 
-    <label>Погонометр:</label>
-    <input type="number" name="pogonometr" required>
+      <div class="row">
+        <label>Тип операции</label>
+        <input type="text" name="operation_type" required>
+      </div>
 
-    <label>Примечание:</label>
-    <textarea name="note" rows="3"></textarea>
+      <div class="row">
+        <label>Операция (описание)</label>
+        <input type="text" name="operation" required>
+      </div>
 
-    <button type="submit">Отправить</button>
-</form>
+      <div class="row">
+        <label>Ответственное лицо (буровик)</label>
+        <input type="text" name="bur_display" value="{{ user.full_name }}" readonly>
+      </div>
 
-<div class="footer-nav">
+      <div class="row">
+        <label>Примечание</label>
+        <textarea name="note"></textarea>
+      </div>
+
+      <div class="row">
+        <button type="submit">Отправить</button>
+      </div>
+    </form>
+
+    <br>
     <a href="/logout">Выйти</a>
-</div>
+  </div>
 
+  <script>
+    // set local visible datetime field (UTC)
+    document.addEventListener("DOMContentLoaded", function(){
+      const dt = new Date();
+      const iso = dt.toISOString().replace('T',' ').split('.')[0] + ' UTC';
+      const el = document.getElementById('dt');
+      if(el) el.value = iso;
+    });
+  </script>
 </body>
 </html>
