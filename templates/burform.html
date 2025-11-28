@@ -3,119 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <title>Сводка буровика</title>
-
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f5f7fa;
-            margin: 0;
-            padding: 0;
-        }
-
-        .container {
-            max-width: 480px;
-            margin: 40px auto;
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-        }
-
-        h2 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        label {
-            font-weight: bold;
-            margin-top: 12px;
-            display: block;
-            color: #444;
-        }
-
-        input, textarea, select {
-            width: 100%;
-            padding: 12px;
-            margin-top: 6px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 15px;
-            background: #fafafa;
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 70px;
-        }
-
-        button {
-            width: 100%;
-            padding: 14px;
-            margin-top: 22px;
-            background: #007bff;
-            border: none;
-            color: white;
-            font-size: 17px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        button:hover {
-            background: #0066d6;
-        }
-
-        .logout {
-            display: block;
-            text-align: center;
-            margin-top: 15px;
-            text-decoration: none;
-            color: #007bff;
-            font-weight: bold;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<div class="container">
-    <h2>Сводка буровика</h2>
+<h2>Сводка буровика</h2>
 
-    <form action="/submit_report" method="post">
+{% if request.query_params.get("ok") %}
+<div class="success">Сводка успешно отправлена!</div>
+{% endif %}
 
-        <label>Буровик (логин)</label>
-        <input type="text" name="bur" required>
+{% if request.query_params.get("fail") %}
+<div class="error">Ошибка отправки сводки!</div>
+{% endif %}
 
-        <label>Участок</label>
-        <input type="text" name="section" required>
+<form method="POST" action="/submit_report">
 
-        <label>№ буровой установки</label>
-        <input type="text" name="bur_no" required>
+    <!-- Дата и время (авто) -->
+    <label>Дата и время:</label>
+    <input type="text" value="{{ now }}" disabled>
 
-        <label>Метраж</label>
-        <input type="number" name="footage" required>
+    <!-- Участок -->
+    <label>Участок:</label>
+    <select name="section" required>
+        <option value="">Выберите участок</option>
+        <option value="Хорасан">Хорасан</option>
+        <option value="Карамурын">Карамурын</option>
+        <option value="Ирколь">Ирколь</option>
+        <option value="Заречное">Заречное</option>
+        <option value="Семизбай">Семизбай</option>
+    </select>
 
-        <label>Погонометр</label>
-        <input type="number" name="pogonometr" required>
+    <!-- Номер буровой установки -->
+    <label>Номер буровой установки:</label>
+    <input name="bur_no" required>
 
-        <label>Тип операции</label>
-        <input type="text" name="operation_type" required>
+    <!-- Метраж -->
+    <label>Метраж:</label>
+    <input type="number" name="footage" required>
 
-        <label>Операция (описание)</label>
-        <input type="text" name="operation" required>
+    <!-- Погонометр -->
+    <label>Погонометр:</label>
+    <input type="number" name="pogonometr" required>
 
-        <label>Ответственное лицо (буровик):</label>
-        <input name="bur" required>
+    <!-- Тип операции -->
+    <label>Тип операции:</label>
+    <input name="operation_type" required>
 
+    <!-- Описание операции -->
+    <label>Операция (описание):</label>
+    <textarea name="operation" required></textarea>
 
-        <label>Примечание</label>
-        <textarea name="note"></textarea>
+    <!-- Ответственное лицо (авто-ФИО) -->
+    <label>Ответственное лицо (буровик):</label>
+    <input type="text" value="{{ user_full_name }}" disabled>
 
-        <button type="submit">Отправить</button>
-    </form>
+    <input type="hidden" name="bur" value="{{ request.session['user'] }}">
 
-    <a class="logout" href="/logout">Выйти</a>
-</div>
+    <button type="submit">Отправить сводку</button>
+</form>
+
+<br>
+<a href="/logout">Выйти</a>
 
 </body>
 </html>
