@@ -1,76 +1,44 @@
-<!-- templates/dispatcher.html -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="utf-8">
-    <title>Диспетчер</title>
+    <meta charset="UTF-8">
+    <title>Диспетчерская</title>
     <link rel="stylesheet" href="/static/style.css">
-    <style>
-      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-      th, td { border: 1px solid #ddd; padding: 6px; font-size: 14px; }
-      th { background: #f4f4f4; }
-      .topbar { display:flex; gap:10px; align-items:center; }
-    </style>
 </head>
 <body>
-  <div class="container">
-    <div class="topbar">
-      <h2>Диспетчерская панель</h2>
-      <div style="margin-left:auto">
-        <a href="/export_excel{% if selected_section %}?section={{ selected_section }}{% endif %}">Скачать Excel</a>
-        &nbsp;|&nbsp;
-        <a href="/users">Пользователи</a>
-        &nbsp;|&nbsp;
-        <a href="/logout">Выйти</a>
-      </div>
-    </div>
 
-    <form method="get" action="/dispatcher">
-      <label>Фильтр по участку:</label>
-      <select name="section" onchange="this.form.submit()">
-        <option value="">Все участки</option>
-        {% for s in sections %}
-          <option value="{{ s }}" {% if selected_section == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </form>
+<h2>Диспетчерская</h2>
 
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Дата UTC</th>
-          <th>Участок</th>
-          <th>Агрегат</th>
-          <th>Метраж</th>
-          <th>Погонометр</th>
-          <th>Тип операции</th>
-          <th>Операция</th>
-          <th>Автор</th>
-          <th>Примечание</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% if reports %}
-          {% for r in reports %}
-            <tr>
-              <td>{{ r.get("id") }}</td>
-              <td>{{ r.get("created_at") }}</td>
-              <td>{{ r.get("section") or r.get("location") }}</td>
-              <td>{{ r.get("bur_no") }}</td>
-              <td>{{ r.get("footage") }}</td>
-              <td>{{ r.get("pogonometr") }}</td>
-              <td>{{ r.get("operation_type") }}</td>
-              <td>{{ r.get("operation") }}</td>
-              <td>{{ r.get("bur") }}</td>
-              <td>{{ r.get("note") }}</td>
-            </tr>
-          {% endfor %}
-        {% else %}
-          <tr><td colspan="10">Сводок пока нет</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
+<a href="/export_excel" class="btn">Экспорт в Excel</a>
+<a href="/logout" class="logout">Выйти</a>
+
+<table>
+    <tr>
+        <th>Дата</th>
+        <th>Участок</th>
+        <th>Буровик</th>
+        <th>Агрегат</th>
+        <th>Метраж</th>
+        <th>Погонометр</th>
+        <th>Операция</th>
+        <th>Тип</th>
+        <th>Примечание</th>
+    </tr>
+
+    {% for r in reports %}
+    <tr>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.section }}</td>
+        <td>{{ r.bur }}</td>
+        <td>{{ r.bur_no }}</td>
+        <td>{{ r.footage }}</td>
+        <td>{{ r.pogonometr }}</td>
+        <td>{{ r.operation }}</td>
+        <td>{{ r.operation_type }}</td>
+        <td>{{ r.note }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
 </body>
 </html>
