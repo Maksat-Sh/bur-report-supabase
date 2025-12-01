@@ -47,7 +47,7 @@ def sb_insert(table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
 
     r = requests.post(url, json=data, headers={
-        "apikey": SUPABASE_API_KEY",
+        "apikey": SUPABASE_API_KEY,
         "Authorization": f"Bearer {SUPABASE_API_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=representation"
