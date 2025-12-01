@@ -13,3 +13,4 @@ asyncpg
 pandas
 requests
 supabase
+sqlalchemy
