@@ -1,143 +1,109 @@
-import httpx
-import os
-import requests
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, Request, Form, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from passlib.context import CryptContext
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
-from openpyxl import Workbook
-from io import BytesIO
+import os
 
-# -------------------------
-#   APP INIT
-# -------------------------
-SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3OTUxMjMsImV4cCI6MjA3MjM3MTEyM30.8vsXFCdhgyTi6yJW1DXJOyvjuqoWJmivGCNYFN5dNv8"  # вставь сюда весь anon key
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774"
+# ---------------------- SETTINGS ------------------------
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
+)
+
+SECRET_KEY = "supersecret123456"   # для сессий
+
+# ---------------------- APP INIT ------------------------
+
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
+# ---------------------- DATABASE ------------------------
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+
+Base = declarative_base()
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    datetime = Column(DateTime, default=datetime.utcnow)
+    section = Column(String)
+    rig_number = Column(String)
+    meterage = Column(String)
+    pogon = Column(String)
+    operation = Column(String)
+    person = Column(String)
+    note = Column(String)
+
+Base.metadata.create_all(bind=engine)
+
+# ---------------------- USERS ------------------------
+
+USERS = {
+    "dispatcher": {"password": "1234", "role": "dispatcher"},
+    "bur1": {"password": "123", "role": "driller"},
+    "bur2": {"password": "123", "role": "driller"},
+}
+
+# ---------------------- HELPERS ------------------------
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
-# -------------------------
-#   SUPABASE HELPERS
-# -------------------------
-
-def sb_select(table, filters=""):
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    if filters:
-        url += f"?{filters}"
-
-    r = requests.get(url, headers={
-        "apikey": SUPABASE_API_KEY,
-        "Authorization": f"Bearer {SUPABASE_API_KEY}",
-    })
-    print("SELECT:", url, r.status_code, r.text)
-    return r.json() if r.status_code == 200 else []
+def require_login(request: Request):
+    if "user" not in request.session:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    return request.session["user"]
 
 
-def sb_insert(table, data):
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-
-    r = requests.post(url, json=data, headers={
-        "apikey": SUPABASE_API_KEY,
-        "Authorization": f"Bearer {SUPABASE_API_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    })
-    print("INSERT:", url, r.status_code, r.text)
-    return r.json()
-
-
-# -------------------------
-#   ROOT → LOGIN
-# -------------------------
+# ---------------------- ROUTES ------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
+async def root(request: Request):
     return RedirectResponse("/login")
 
 
+# ---------------------- LOGIN ------------------------
+
 @app.get("/login", response_class=HTMLResponse)
-async def login(request: Request, error: int = 0):
-    return templates.TemplateResponse("login.html", {"request": request, "error": error})
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
-
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # Получаем пользователя из Supabase
-    query_url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}"
+    if username not in USERS:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин"})
 
-    headers = {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-    }
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(query_url, headers=headers)
-        print("SELECT:", query_url, resp.status_code, resp.text)
-        users = resp.json()
-
-    if not users:
-        return RedirectResponse("/login?error=1", status_code=302)
-
-    user = users[0]
-
-    # === Проверка пароля через bcrypt.hash ===
-    if not bcrypt.verify(password, user["password_hash"]):
-        return RedirectResponse("/login?error=1", status_code=302)
-
-    # === Успешная авторизация ===
-    request.session["user_id"] = user["id"]
-    request.session["username"] = user["username"]
-    request.session["role"] = user["role"]
-
-    # Роли
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-
-    if user["role"] == "bur":
-        return RedirectResponse("/burform", status_code=302)
-
-    return RedirectResponse("/login?error=1", status_code=302)
-
-
-async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    users = sb_select("users", f"username=eq.{username}")
-
-    if not users:
-        return RedirectResponse("/login?error=1", status_code=302)
-
-    user = users[0]
-
-    if not pwd_context.verify(password, user["password_hash"]):
-        return RedirectResponse("/login?error=1", status_code=302)
+    if USERS[username]["password"] != password:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
 
     request.session["user"] = {
-        "id": user["id"],
-        "username": user["username"],
-        "role": user["role"],
-        "full_name": user.get("full_name", ""),
-        "section": user.get("section", "")
+        "username": username,
+        "role": USERS[username]["role"]
     }
 
-    if user["role"] == "dispatcher":
+    if USERS[username]["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
-    return RedirectResponse("/burform", status_code=302)
+    else:
+        return RedirectResponse("/burform", status_code=302)
 
+
+# ---------------------- LOGOUT ------------------------
 
 @app.get("/logout")
 async def logout(request: Request):
@@ -145,102 +111,85 @@ async def logout(request: Request):
     return RedirectResponse("/login")
 
 
-# -------------------------
-#   BUR FORM
-# -------------------------
+# ---------------------- DRILLER FORM ------------------------
 
 @app.get("/burform", response_class=HTMLResponse)
-async def burform(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] != "bur":
-        return RedirectResponse("/login")
+async def burform(request: Request, user=Depends(require_login)):
+    if user["role"] != "driller":
+        return RedirectResponse("/dispatcher")
 
-    return templates.TemplateResponse("burform.html", {"request": request, "user": user})
+    return templates.TemplateResponse("burform.html", {"request": request})
 
 
 @app.post("/submit_report")
 async def submit_report(
         request: Request,
-        operation_type: str = Form(...),
+        section: str = Form(...),
+        rig_number: str = Form(...),
+        meterage: str = Form(...),
+        pogon: str = Form(...),
         operation: str = Form(...),
-        footage: int = Form(...),
-        pogonometr: int = Form(...),
-        note: str = Form("")
+        person: str = Form(...),
+        note: str = Form(""),
+        db=Depends(get_db)
 ):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse("/login")
+    report = Report(
+        section=section,
+        rig_number=rig_number,
+        meterage=meterage,
+        pogon=pogon,
+        operation=operation,
+        person=person,
+        note=note
+    )
+    db.add(report)
+    db.commit()
 
-    data = {
-        "created_at": datetime.utcnow().isoformat(),
-        "operation_type": operation_type,
-        "operation": operation,
-        "footage": footage,
-        "pogonometr": pogonometr,
-        "note": note,
-        "section": user["section"],
-        "bur": user["full_name"],
-        "bur_no": user["username"]
-    }
-
-    sb_insert("reports", data)
-
-    return RedirectResponse("/burform?success=1", status_code=302)
-
-
-# -------------------------
-#   DISPATCHER PAGE
-# -------------------------
-
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request, section: str = ""):
-    user = request.session.get("user")
-    if not user or user["role"] != "dispatcher":
-        return RedirectResponse("/login")
-
-    if section:
-        reports = sb_select("reports", f"section=eq.{section}&order=created_at.desc")
-    else:
-        reports = sb_select("reports", "order=created_at.desc")
-
-    return templates.TemplateResponse("dispatcher.html", {
+    return templates.TemplateResponse("burform.html", {
         "request": request,
-        "reports": reports,
-        "selected_section": section
+        "success": "Сводка отправлена!"
     })
 
 
-# -------------------------
-#   EXPORT EXCEL
-# -------------------------
+# ---------------------- DISPATCHER PANEL ------------------------
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_panel(request: Request, db=Depends(get_db), user=Depends(require_login)):
+    if user["role"] != "dispatcher":
+        return RedirectResponse("/burform")
+
+    reports = db.query(Report).order_by(Report.datetime.desc()).all()
+
+    return templates.TemplateResponse("dispatcher.html", {
+        "request": request,
+        "reports": reports
+    })
+
+
+# ---------------------- EXPORT ------------------------
 
 @app.get("/export_excel")
-async def export_excel():
-    reports = sb_select("reports", "order=created_at.desc")
+async def export_excel(db=Depends(get_db), user=Depends(require_login)):
+    if user["role"] != "dispatcher":
+        raise HTTPException(403)
+
+    from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["Дата", "Участок", "Буровик", "Агрегат", "Метраж", "Погонометр", "Операция", "Тип", "Примечание"])
+    ws.title = "Reports"
 
-    for r in reports:
+    ws.append(["ID", "Дата/время", "Участок", "№ агрегата", "Метраж", "Погонометр", "Операции", "Ответственный", "Примечание"])
+
+    rows = db.query(Report).all()
+    for r in rows:
         ws.append([
-            r["created_at"],
-            r["section"],
-            r["bur"],
-            r["bur_no"],
-            r["footage"],
-            r["pogonometr"],
-            r["operation"],
-            r["operation_type"],
-            r["note"],
+            r.id, r.datetime, r.section, r.rig_number,
+            r.meterage, r.pogon, r.operation, r.person, r.note
         ])
 
-    stream = BytesIO()
-    wb.save(stream)
-    stream.seek(0)
+    filepath = "/tmp/reports.xlsx"
+    wb.save(filepath)
 
-    return StreamingResponse(
-        stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
-    )
+    from fastapi.responses import FileResponse
+    return FileResponse(filepath, media_type="application/vnd.ms-excel", filename="reports.xlsx")
