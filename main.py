@@ -15,7 +15,7 @@ from io import BytesIO
 # -------------------------
 SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3OTUxMjMsImV4cCI6MjA3MjM3MTEyM30.8vsXFCdhgyTi6yJW1DXJOyvjuqoWJmivGCNYFN5dNv8"  # вставь сюда весь anon key
-
+SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774"
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
 
