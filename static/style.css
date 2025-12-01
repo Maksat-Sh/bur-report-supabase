@@ -1,9 +1,48 @@
-body{font-family: Arial, Helvetica, sans-serif; background:#f4f6f8; margin:0; padding:20px}
-.card{background:#fff; max-width:1000px; margin:10px auto; padding:20px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.08)}
-label{display:block;margin:8px 0}
-input, select, textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
-button{padding:8px 14px;border:none;background:#1976d2;color:#fff;border-radius:6px;cursor:pointer}
-table.reports{width:100%;border-collapse:collapse;margin-top:12px}
-table.reports th, table.reports td{border:1px solid #eee;padding:6px;text-align:left;font-size:14px}
-.error{background:#ffebee;color:#b71c1c;padding:8px;border-radius:6px}
-.success{background:#e8f5e9;color:#2e7d32;padding:8px;border-radius:6px}
+body {
+    font-family: Arial;
+    background: #f4f4f4;
+    padding: 20px;
+}
+
+h2 { margin-bottom: 20px; }
+
+form, table {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+input, select, textarea {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    margin-bottom: 15px;
+}
+
+button {
+    padding: 10px 15px;
+    background: #1976d2;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+.btn {
+    padding: 10px;
+    background: green;
+    color: white;
+    text-decoration: none;
+}
+
+.logout {
+    float: right;
+    color: red;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.ok {
+    color: green;
+    font-weight: bold;
+}
