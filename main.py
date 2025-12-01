@@ -70,7 +70,58 @@ async def login(request: Request, error: int = 0):
     return templates.TemplateResponse("login.html", {"request": request, "error": error})
 
 
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 @app.post("/login")
+async def login(request: Request):
+    form = await request.form()
+    username = form["username"]
+    password = form["password"]
+
+    # Запрос в Supabase
+    url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+
+    r = requests.get(url, headers=headers)
+    print("SELECT:", url, r.status_code, r.text)
+
+    if r.status_code != 200:
+        return RedirectResponse("/login?error=1", status_code=302)
+
+    data = r.json()
+    if not data:
+        return RedirectResponse("/login?error=1", status_code=302)
+
+    user = data[0]
+
+    # --- ВАЖНО: проверяем именно password_hash ---
+    password_hash = user.get("password_hash")
+
+    if not password_hash:
+        return RedirectResponse("/login?error=1", status_code=302)
+
+    # bcrypt verify
+    if not pwd_context.verify(password, password_hash):
+        return RedirectResponse("/login?error=1", status_code=302)
+
+    # Успешный вход — создаём сессию
+    request.session["user"] = {
+        "id": user["id"],
+        "username": user["username"],
+        "full_name": user["full_name"],
+        "role": user["role"]
+    }
+
+    # Перенаправление по роли
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+    else:
+        return RedirectResponse("/burform", status_code=302)
+
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
     users = sb_select("users", f"username=eq.{username}")
 
