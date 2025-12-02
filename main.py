@@ -15,7 +15,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # === Supabase REST API ===
 SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
-SUPABASE_KEY = "ANON_KEY_ЗДЕСЬ_ИЛИ_SERVICE_ROLE"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774"
 
 # === Пароли ===
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
