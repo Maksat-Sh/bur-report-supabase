@@ -9,36 +9,40 @@
 
 <h2>Сводка буровика</h2>
 
-{% if request.query_params.get("success") %}
-<p class="ok">Сводка отправлена!</p>
-{% endif %}
+<form action="/burform" method="post" class="form-box">
 
-<form method="post" action="/submit_report">
+    <label>Участок</label>
+    <input type="text" name="area" required>
 
-    <label>Тип операции:</label>
-    <select name="operation_type" required>
-        <option value="Механическая">Механическая</option>
-        <option value="Спуск/подъём">Спуск/подъём</option>
-        <option value="Промывка">Промывка</option>
-        <option value="Прочее">Прочее</option>
-    </select>
+    <label>№ буровой установки</label>
+    <input type="text" name="rig" required>
 
-    <label>Операция:</label>
-    <input type="text" name="operation" required>
+    <label>Метраж</label>
+    <input type="number" step="0.1" name="meters" required>
 
-    <label>Метраж:</label>
-    <input type="number" name="footage" required>
+    <label>Погонометр</label>
+    <input type="number" step="0.1" name="pogon" required>
 
-    <label>Погонометр:</label>
-    <input type="number" name="pogonometr" required>
+    <label>Виды операции</label>
+    <input type="text" name="operations">
 
-    <label>Примечание:</label>
+    <label>Ответственное лицо</label>
+    <input type="text" name="person">
+
+    <label>Примечание</label>
     <textarea name="note"></textarea>
 
     <button type="submit">Отправить</button>
 </form>
 
-<a href="/logout" class="logout">Выйти</a>
+<br>
+<a href="/">На главную</a>
+
+<script>
+document.querySelector("form").addEventListener("submit", () => {
+    setTimeout(()=>{ document.querySelector("form").reset() },300)
+})
+</script>
 
 </body>
 </html>
