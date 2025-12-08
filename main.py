@@ -1,174 +1,182 @@
-from fastapi import FastAPI, Request, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
-from fastapi.templating import Jinja2Templates
+# ---- main.py (полностью новый КОПИРУЙ ЦЕЛИКОМ) ----
+
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
-from passlib.hash import argon2
-from datetime import datetime
-from typing import Optional
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.sessions import SessionMiddleware
 import httpx
+import bcrypt
 import os
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPA_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co/rest/v1"
+SUPA_KEY = "public"   # <-- ничего не меняй
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="secret123")
+app.add_middleware(SessionMiddleware, secret_key="SECRETKEY123")
 
-templates = Jinja2Templates(directory="templates")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
-# -------------------------- HELPERS --------------------------
-async def supabase_query(table: str, func: str, payload=None, where=None):
+# ---------- utils ---------------
+
+async def supa_select(table, params=""):
     async with httpx.AsyncClient() as client:
-        url = f"{SUPABASE_URL}/rest/v1/{table}"
-
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
-
-        if where:
-            url += f"?{where}"
-
-        if func == "get":
-            return (await client.get(url, headers=headers)).json()
-
-        if func == "post":
-            return (await client.post(url, headers=headers, json=payload)).json()
-
-        if func == "patch":
-            return (await client.patch(url, headers=headers, json=payload)).json()
-
-        if func == "delete":
-            return (await client.delete(url, headers=headers)).json()
+        r = await client.get(
+            f"{SUPA_URL}/{table}?{params}",
+            headers={"apikey": SUPA_KEY}
+        )
+        r.raise_for_status()
+        return r.json()
 
 
-def current_user(request: Request):
-    return request.session.get("user")
+async def supa_insert(table, data):
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{SUPA_URL}/{table}",
+            json=data,
+            headers={
+                "apikey": SUPA_KEY,
+                "Content-Type": "application/json"
+            }
+        )
+        r.raise_for_status()
+        return r.json()
 
 
-def require_dispatcher(request: Request):
-    u = current_user(request)
-    if not u or u["role"] != "dispatcher":
-        return RedirectResponse("/login", status_code=302)
+# ========== AUTH ==================
 
-
-# -------------------------- LOGIN --------------------------
 @app.get("/", response_class=HTMLResponse)
-async def root():
+async def index(request: Request):
+    if request.session.get("user"):
+        role = request.session["user"]["role"]
+        if role == "dispatcher":
+            return RedirectResponse("/dispatcher")
+        return RedirectResponse("/burform")
     return RedirectResponse("/login")
 
 
-@app.get("/login")
+@app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(), password: str = Form()):
-    res = await supabase_query("users", "get", where=f"username=eq.{username}")
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    users = await supa_select("users", f"username=eq.{username}")
+    if not users:
+        return RedirectResponse("/login?error=1", 303)
 
-    if not res: 
-        return RedirectResponse("/login?error=1", status_code=302)
+    user = users[0]
 
-    user = res[0]
+    hashed = user.get("password_hash", "")
+    if not bcrypt.checkpw(password.encode(), hashed.encode()):
+        return RedirectResponse("/login?error=1", 303)
 
-   if not argon2.verify(password, user["password_hash"]):
-        return RedirectResponse("/login?error=1", status_code=302)
-
-    request.session["user"] = user
+    request.session["user"] = {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"]
+    }
 
     if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher")
-    else:
-        return RedirectResponse("/burform")
+        return RedirectResponse("/dispatcher", 302)
+    return RedirectResponse("/burform", 302)
 
 
 @app.get("/logout")
-def logout(request: Request):
+async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
+    return RedirectResponse("/login", 302)
 
 
-# -------------------------- BUR FORM --------------------------
+
+#   ================= USERS (диспетчер) ===============
+
+
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    u = request.session.get("user")
+    if not u or u["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    all_users = await supa_select("users")
+    return templates.TemplateResponse("users.html",
+        {"request": request, "users": all_users})
+
+
+@app.post("/users/create")
+async def create_user(
+    request: Request,
+    username: str = Form(...),
+    full_name: str = Form(...),
+    password: str = Form(...)
+):
+    u = request.session.get("user")
+    if not u or u["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    await supa_insert("users", {
+        "username": username,
+        "full_name": full_name,
+        "role": "bur",
+        "password_hash": hashed
+    })
+
+    return RedirectResponse("/users", 302)
+
+
+
+# --------------- dispatcher home --------------
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    u = request.session.get("user")
+    if not u or u["role"] != "dispatcher":
+        return RedirectResponse("/login")
+
+    return templates.TemplateResponse("dispatcher.html", {"request": request})
+
+
+
+# ------------ burform --------------
+
 @app.get("/burform", response_class=HTMLResponse)
 async def burform(request: Request):
-    if not current_user(request):
+    u = request.session.get("user")
+    if not u:
         return RedirectResponse("/login")
     return templates.TemplateResponse("burform.html", {"request": request})
 
 
-@app.post("/burform")
-async def submit_report(
+@app.post("/burform_submit")
+async def burform_submit(
     request: Request,
-    section: str = Form(),
-    bur_no: str = Form(),
-    footage: int = Form(),
-    pogonometr: int = Form(),
-    operation_type: str = Form(),
-    operation: str = Form(),
-    responsible: str = Form(),
-    note: str = Form(),
+    section: str = Form(...),
+    bur: str = Form(...),
+    bur_no: str = Form(...),
+    location: str = Form(...),
+    footage: int = Form(...),
+    pogonometr: int = Form(...),
+    operation_type: str = Form(...),
+    operation: str = Form(...),
+    note: str = Form(...)
 ):
-    u = current_user(request)
-    if not u:
-        return RedirectResponse("/login")
 
-    await supabase_query("reports", "post", {
+    await supa_insert("reports", {
         "section": section,
+        "bur": bur,
         "bur_no": bur_no,
+        "location": location,
         "footage": footage,
         "pogonometr": pogonometr,
         "operation_type": operation_type,
         "operation": operation,
-        "responsible": responsible,
-        "note": note,
-        "created_at": datetime.utcnow().isoformat(),
-        "bur": u["username"]
+        "note": note
     })
 
-    return RedirectResponse("/burform", status_code=302)
-
-
-# -------------------------- DISPATCHER VIEW --------------------------
-@app.get("/dispatcher")
-async def dispatcher(request: Request):
-    if require_dispatcher(request):
-        return require_dispatcher(request)
-
-    reports = await supabase_query("reports", "get")
-    users = await supabase_query("users", "get")
-
-    return templates.TemplateResponse("dispatcher.html", {
-        "request": request,
-        "reports": reports,
-        "users": users
-    })
-
-
-# -------------------------- CREATE USER --------------------------
-@app.post("/create_user")
-async def create_user(
-    request: Request,
-    username: str = Form(),
-    full_name: str = Form(),
-    password: str = Form(),
-):
-    if require_dispatcher(request):
-        return require_dispatcher(request)
-
-    hashed = bcrypt.hash(password)
-
-    await supabase_query("users", "post", {
-        "username": username,
-        "full_name": full_name,
-        "password_hash": hashed,
-        "role": "bur",
-        "created_at": datetime.utcnow().isoformat()
-    })
-
-    return RedirectResponse("/dispatcher", status_code=302)
+    return RedirectResponse("/burform", 302)
