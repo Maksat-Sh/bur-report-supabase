@@ -10,7 +10,7 @@ import httpx
 import os
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="secret123")
