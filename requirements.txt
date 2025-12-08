@@ -5,7 +5,7 @@ httpx
 python-dotenv
 openpyxl
 passlib[bcrypt]
-bcrypt
+passlib==1.7.4
 itsdangerous
 psycopg2-binary
 python-multipart
