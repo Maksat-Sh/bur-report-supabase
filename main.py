@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from passlib.hash import bcrypt
+from passlib.hash import argon2
 from datetime import datetime
 from typing import Optional
 import httpx
@@ -77,7 +77,7 @@ async def login(request: Request, username: str = Form(), password: str = Form()
 
     user = res[0]
 
-    if not bcrypt.verify(password, user["password_hash"]):
+   if not argon2.verify(password, user["password_hash"]):
         return RedirectResponse("/login?error=1", status_code=302)
 
     request.session["user"] = user
