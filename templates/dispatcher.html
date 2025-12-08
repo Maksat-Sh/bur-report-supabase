@@ -2,43 +2,66 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Диспетчерская</title>
+    <title>Диспетчер</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<h2>Диспетчерская</h2>
+<h2>Панель диспетчера</h2>
 
-<a href="/export_excel" class="btn">Экспорт в Excel</a>
-<a href="/logout" class="logout">Выйти</a>
+<button onclick="exportExcel()">Экспорт в Excel</button>
+<button onclick="logout()">Выйти</button>
 
 <table>
+    <thead>
     <tr>
-        <th>Дата</th>
+        <th>ID</th>
+        <th>Дата/время</th>
         <th>Участок</th>
-        <th>Буровик</th>
-        <th>Агрегат</th>
+        <th>Буровая</th>
         <th>Метраж</th>
         <th>Погонометр</th>
-        <th>Операция</th>
-        <th>Тип</th>
+        <th>Операции</th>
+        <th>Ответственный</th>
         <th>Примечание</th>
     </tr>
+    </thead>
 
-    {% for r in reports %}
-    <tr>
-        <td>{{ r.created_at }}</td>
-        <td>{{ r.section }}</td>
-        <td>{{ r.bur }}</td>
-        <td>{{ r.bur_no }}</td>
-        <td>{{ r.footage }}</td>
-        <td>{{ r.pogonometr }}</td>
-        <td>{{ r.operation }}</td>
-        <td>{{ r.operation_type }}</td>
-        <td>{{ r.note }}</td>
-    </tr>
-    {% endfor %}
+    <tbody id="data"></tbody>
 </table>
+
+<script>
+load()
+
+function load(){
+    fetch("/api/reports")
+        .then(r=>r.json())
+        .then(rows=>{
+            document.getElementById("data").innerHTML =
+                rows.map(r=>`
+                    <tr>
+                        <td>${r.id}</td>
+                        <td>${r.datetime}</td>
+                        <td>${r.area}</td>
+                        <td>${r.rig}</td>
+                        <td>${r.meters}</td>
+                        <td>${r.pogon}</td>
+                        <td>${r.operations}</td>
+                        <td>${r.person}</td>
+                        <td>${r.note}</td>
+                    </tr>
+                `).join("")
+        })
+}
+
+function exportExcel(){
+    window.location="/export"
+}
+
+function logout(){
+    window.location="/logout"
+}
+</script>
 
 </body>
 </html>
