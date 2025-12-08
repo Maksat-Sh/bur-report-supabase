@@ -1,67 +1,58 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Диспетчер</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Диспетчер — BurReport</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <header class="topbar">
+    <div>Диспетчер: {{ user.username }}</div>
+    <a href="/logout">Выйти</a>
+  </header>
 
-<h2>Панель диспетчера</h2>
+  <main class="container">
+    <h1>Сводки</h1>
+    <div id="loader">Загрузка...</div>
+    <table id="reports" class="reports" style="display:none;">
+      <thead>
+        <tr>
+          <th>ID</th><th>Дата/время</th><th>Участок</th><th>Бур</th><th>№ установки</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
 
-<button onclick="exportExcel()">Экспорт в Excel</button>
-<button onclick="logout()">Выйти</button>
-
-<table>
-    <thead>
-    <tr>
-        <th>ID</th>
-        <th>Дата/время</th>
-        <th>Участок</th>
-        <th>Буровая</th>
-        <th>Метраж</th>
-        <th>Погонометр</th>
-        <th>Операции</th>
-        <th>Ответственный</th>
-        <th>Примечание</th>
-    </tr>
-    </thead>
-
-    <tbody id="data"></tbody>
-</table>
-
-<script>
-load()
-
-function load(){
-    fetch("/api/reports")
-        .then(r=>r.json())
-        .then(rows=>{
-            document.getElementById("data").innerHTML =
-                rows.map(r=>`
-                    <tr>
-                        <td>${r.id}</td>
-                        <td>${r.datetime}</td>
-                        <td>${r.area}</td>
-                        <td>${r.rig}</td>
-                        <td>${r.meters}</td>
-                        <td>${r.pogon}</td>
-                        <td>${r.operations}</td>
-                        <td>${r.person}</td>
-                        <td>${r.note}</td>
-                    </tr>
-                `).join("")
-        })
-}
-
-function exportExcel(){
-    window.location="/export"
-}
-
-function logout(){
-    window.location="/logout"
-}
-</script>
-
+  <script>
+    async function loadReports() {
+      try {
+        const res = await fetch('/api/reports', { credentials: 'same-origin' });
+        if (!res.ok) throw await res.json();
+        const data = await res.json();
+        const tbody = document.querySelector('#reports tbody');
+        tbody.innerHTML = '';
+        data.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.id ?? ''}</td>
+                          <td>${r.created_at ?? ''}</td>
+                          <td>${r.section ?? ''}</td>
+                          <td>${r.driller ?? ''}</td>
+                          <td>${r.rig_number ?? ''}</td>
+                          <td>${r.metrazh ?? ''}</td>
+                          <td>${r.pogonometr ?? ''}</td>
+                          <td>${r.note ?? ''}</td>`;
+          tbody.appendChild(tr);
+        });
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('reports').style.display = '';
+      } catch (err) {
+        document.getElementById('loader').innerText = 'Ошибка загрузки';
+        console.error(err);
+      }
+    }
+    loadReports();
+  </script>
 </body>
 </html>
