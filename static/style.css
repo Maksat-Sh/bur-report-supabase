@@ -1,48 +1,49 @@
 body {
     font-family: Arial;
-    background: #f4f4f4;
     padding: 20px;
 }
 
-h2 { margin-bottom: 20px; }
-
-form, table {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
+h2{
+    margin-bottom:15px;
 }
 
-input, select, textarea {
-    width: 100%;
-    padding: 8px;
-    margin-top: 5px;
-    margin-bottom: 15px;
+.form-box, .login-box{
+    width: 350px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
 }
 
-button {
-    padding: 10px 15px;
-    background: #1976d2;
-    color: white;
-    border: none;
-    cursor: pointer;
+input,textarea,button{
+    padding:8px;
+    font-size:15px;
 }
 
-.btn {
-    padding: 10px;
-    background: green;
-    color: white;
-    text-decoration: none;
+button{
+    background:#0077ff;
+    color:white;
+    border:0;
+    cursor:pointer;
 }
 
-.logout {
-    float: right;
-    color: red;
-    text-decoration: none;
-    font-weight: bold;
+button:hover{
+    opacity:.8;
 }
 
-.ok {
-    color: green;
-    font-weight: bold;
+table{
+    margin-top:20px;
+    border-collapse:collapse;
+    width:100%;
+}
+
+th,td{
+    border:1px solid #bbb;
+    padding:6px;
+    text-align:center;
+}
+
+@media(max-width:600px){
+    table{
+        font-size:13px;
+    }
 }
