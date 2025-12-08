@@ -4,8 +4,8 @@ jinja2
 httpx
 python-dotenv
 openpyxl
-passlib[bcrypt]
-passlib==1.7.4
+passlib[argon2]
+argon2-cffi
 itsdangerous
 psycopg2-binary
 python-multipart
