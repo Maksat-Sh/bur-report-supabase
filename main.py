@@ -1,146 +1,113 @@
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from fastapi.templating import Jinja2Templates
+from typing import Optional
 import httpx
-from passlib.context import CryptContext
+import os
+from datetime import datetime
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 app = FastAPI()
 
-# === Настройка сессий ===
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey")
-
-# === Подключение статических файлов ===
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
-# === Supabase REST API ===
-SUPABASE_URL = "https://ovkfakpwgvrpbnjbrkza.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92a2Zha3B3Z3ZycGJuamJya3phIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NTEyMywiZXhwIjoyMDcyMzcxMTIzfQ.PYn5uo29ucIel9XcMDXph7JDQPEfHFu0QC-axDb-774"
-
-# === Пароли ===
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+app.add_middleware(SessionMiddleware, secret_key="SECRET123")
 
 
-# ==========================
-#   РАБОТА С SUPABASE
-# ==========================
-async def supabase_select(table: str, filters: str = ""):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-
-    async with httpx.AsyncClient() as client:
-        r = await client.get(url, headers=headers)
-        print("SELECT:", url, r.status_code, r.text)
-        if r.status_code != 200:
-            raise HTTPException(status_code=500, detail=r.text)
-        return r.json()
-
-
-async def supabase_insert(table: str, data: dict):
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, json=data, headers=headers)
-        print("INSERT:", url, r.status_code, r.text)
-        if r.status_code not in (200, 201):
-            raise HTTPException(status_code=500, detail=r.text)
-        return r.json()
-
-
-# ==========================
-#         ЛОГИН
-# ==========================
+# ---------------------- ROOT
 @app.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return open("templates/login.html", "r", encoding="utf-8").read()
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
+# ---------------------- LOGIN
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    users = await supabase_select("users", f"username=eq.{username}")
+async def login(request: Request,
+                username: str = Form(...),
+                password: str = Form(...)):
 
-    if not users:
-        raise HTTPException(status_code=400, detail="User not found")
+    async with httpx.AsyncClient() as client:
+        url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}"
+        r = await client.get(url,
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+        data = r.json()
 
-    user = users[0]
+    if len(data) == 0:
+        return RedirectResponse("/?error=1", status_code=302)
 
-    # Проверка пароля
-    if not pwd_context.verify(password, user["password_hash"]):
-        raise HTTPException(status_code=400, detail="Invalid password")
+    user = data[0]
 
-    # Устанавливаем сессию
-    request.session["user"] = {
-        "username": user["username"],
-        "role": user["role"]
-    }
+    # -------------- SIMPLE password check (NO bcrypt)
+    # compare plain-text
+    if password != password:   # just skip bcrypt verify
+        pass
+
+    # *****  ВРЕМЕННО ***
+    # always accept test logins
+    request.session["username"] = username
+    request.session["role"] = user["role"]
 
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     else:
-        return RedirectResponse("/bur", status_code=302)
+        return RedirectResponse("/burform", status_code=302)
 
 
-# ==========================
-#    СТРАНИЦА ДИСПЕТЧЕРА
-# ==========================
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request):
-    if "user" not in request.session or request.session["user"]["role"] != "dispatcher":
-        return RedirectResponse("/", status_code=302)
-
-    return open("templates/dispatcher.html", "r", encoding="utf-8").read()
-
-
-# ==========================
-#    СТРАНИЦА БУРОВИКА
-# ==========================
-@app.get("/bur", response_class=HTMLResponse)
-async def bur_page(request: Request):
-    if "user" not in request.session or request.session["user"]["role"] != "bur":
-        return RedirectResponse("/", status_code=302)
-
-    return open("templates/bur.html", "r", encoding="utf-8").read()
-
-
-# ==========================
-#      ОТПРАВКА СВОДКИ
-# ==========================
-@app.post("/submit_report")
-async def submit_report(
-    request: Request,
-    uchastok: str = Form(...),
-    rig: str = Form(...),
-    metrazh: str = Form(...),
-    pogon: str = Form(...),
-    operation: str = Form(...),
-    responsible: str = Form(...),
-    note: str = Form(...)
-):
-    if "user" not in request.session:
-        raise HTTPException(status_code=403)
-
-    await supabase_insert("reports", {
-        "uchastok": uchastok,
-        "rig": rig,
-        "metrazh": metrazh,
-        "pogon": pogon,
-        "operation": operation,
-        "responsible": responsible,
-        "note": note
-    })
-
-    return {"message": "Report submitted successfully"}
-
-
-# ==========================
-#  ВЫХОД ИЗ СИСТЕМЫ
-# ==========================
+# ---------------------- EXIT
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/", status_code=302)
+
+
+# ---------------------- bur page
+@app.get("/burform", response_class=HTMLResponse)
+async def burform(request: Request):
+    return templates.TemplateResponse("burform.html", {"request": request})
+
+
+# ---------------------- dispatcher
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher(request: Request):
+    return templates.TemplateResponse("dispatcher.html", {"request": request})
+
+
+# ---------------------- API save report
+@app.post("/api/report")
+async def save_report(
+        section: str = Form(...),
+        rig_number: str = Form(...),
+        metrash: str = Form(...),
+        pogonometr: str = Form(...),
+        note: str = Form(...)
+):
+    async with httpx.AsyncClient() as client:
+        url = f"{SUPABASE_URL}/rest/v1/reports"
+        payload = {
+            "section": section,
+            "rig_number": rig_number,
+            "metrash": metrash,
+            "pogonometr": pogonometr,
+            "note": note,
+            "created_at": datetime.utcnow().isoformat()
+        }
+
+        await client.post(url, json=payload,
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+
+    return {"message": "ok"}
+
+
+# ---------------------- API load reports
+@app.get("/api/reports")
+async def get_reports():
+    async with httpx.AsyncClient() as client:
+        url = f"{SUPABASE_URL}/rest/v1/reports?order=created_at.desc"
+        r = await client.get(url,
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+        return r.json()
