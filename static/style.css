@@ -1,49 +1,13 @@
-body {
-    font-family: Arial;
-    padding: 20px;
-}
-
-h2{
-    margin-bottom:15px;
-}
-
-.form-box, .login-box{
-    width: 350px;
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-}
-
-input,textarea,button{
-    padding:8px;
-    font-size:15px;
-}
-
-button{
-    background:#0077ff;
-    color:white;
-    border:0;
-    cursor:pointer;
-}
-
-button:hover{
-    opacity:.8;
-}
-
-table{
-    margin-top:20px;
-    border-collapse:collapse;
-    width:100%;
-}
-
-th,td{
-    border:1px solid #bbb;
-    padding:6px;
-    text-align:center;
-}
-
-@media(max-width:600px){
-    table{
-        font-size:13px;
-    }
-}
+:root{--bg:#f6f8fb;--card:#fff;--accent:#2b6cb0;--muted:#666}
+body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; background:var(--bg); margin:0; color:#111}
+.container{max-width:960px;margin:24px auto;padding:16px;background:var(--card);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.04)}
+.topbar{display:flex;gap:12px;justify-content:flex-end;padding:8px 16px;background:transparent}
+h1{margin:0 0 16px 0}
+label{display:block;margin-bottom:12px}
+input,select,textarea{display:block;width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
+button{background:var(--accent);color:#fff;padding:10px 14px;border:none;border-radius:8px;cursor:pointer}
+.error{background:#ffe6e6;color:#8a1f1f;padding:8px;border-radius:6px;margin-bottom:12px}
+.ok{background:#e6ffe6;color:#1b7b1b;padding:8px;border-radius:6px;margin-bottom:12px}
+.reports{width:100%;border-collapse:collapse}
+.reports th,.reports td{border:1px solid #eee;padding:8px;text-align:left}
+.notes{margin-top:12px;color:var(--muted);font-size:14px}
