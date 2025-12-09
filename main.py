@@ -151,6 +151,24 @@ async def burform_submit(
     await conn.close()
     return RedirectResponse("/burform?ok=1", status_code=302)
 
+@app.post("/users")
+async def create_user(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(""),
+    role: str = Form("bur"),
+    db: AsyncSession = Depends(get_db)
+):
+    if request.session.get("role") != "dispatcher":
+        raise HTTPException(status_code=403)
+
+    hashed = bcrypt.hash(password)
+    new_user = User(username=username, password_hash=hashed, full_name=full_name, role=role)
+    db.add(new_user)
+    await db.commit()
+
+    return RedirectResponse("/users", status_code=302)
 
 # ---------------------------
 # dispatcher adds users
@@ -176,3 +194,12 @@ async def create_user(
 
     await conn.close()
     return RedirectResponse("/dispatcher?user_added=1", status_code=302)
+    @app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request, db: AsyncSession = Depends(get_db)):
+    if not request.session.get("user") or request.session.get("role") != "dispatcher":
+        return RedirectResponse("/login")
+
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    return templates.TemplateResponse("users.html", {"request": request, "users": users})
+
