@@ -1,58 +1,44 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Диспетчер — BurReport</title>
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Диспетчер — BurReport</title>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>Диспетчер: {{ user.username }}</div>
-    <a href="/logout">Выйти</a>
-  </header>
+<header class="topbar">
+<div>Диспетчер: {{ user.username }}</div>
+<a href="/logout">Выйти</a>
+</header>
 
-  <main class="container">
-    <h1>Сводки</h1>
-    <div id="loader">Загрузка...</div>
-    <table id="reports" class="reports" style="display:none;">
-      <thead>
-        <tr>
-          <th>ID</th><th>Дата/время</th><th>Участок</th><th>Бур</th><th>№ установки</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </main>
 
-  <script>
-    async function loadReports() {
-      try {
-        const res = await fetch('/api/reports', { credentials: 'same-origin' });
-        if (!res.ok) throw await res.json();
-        const data = await res.json();
-        const tbody = document.querySelector('#reports tbody');
-        tbody.innerHTML = '';
-        data.forEach(r => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${r.id ?? ''}</td>
-                          <td>${r.created_at ?? ''}</td>
-                          <td>${r.section ?? ''}</td>
-                          <td>${r.driller ?? ''}</td>
-                          <td>${r.rig_number ?? ''}</td>
-                          <td>${r.metrazh ?? ''}</td>
-                          <td>${r.pogonometr ?? ''}</td>
-                          <td>${r.note ?? ''}</td>`;
-          tbody.appendChild(tr);
-        });
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('reports').style.display = '';
-      } catch (err) {
-        document.getElementById('loader').innerText = 'Ошибка загрузки';
-        console.error(err);
-      }
-    }
-    loadReports();
-  </script>
+<main class="container">
+<h1>Сводки</h1>
+<table class="reports">
+<thead>
+<tr>
+<th>ID</th><th>Дата/время</th><th>Участок</th><th>Бур</th><th>№ установки</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th>
+</tr>
+</thead>
+<tbody>
+{% for r in reports %}
+<tr>
+<td>{{ r.id }}</td>
+<td>{{ r.created_at }}</td>
+<td>{{ r.area }}</td>
+<td>{{ r.username }}</td>
+<td>{{ r.rig }}</td>
+<td>{{ r.meter }}</td>
+<td>{{ r.pognometr }}</td>
+<td>{{ r.comment }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+
+<p><a href="/users">Управление пользователями</a></p>
+</main>
 </body>
 </html>
