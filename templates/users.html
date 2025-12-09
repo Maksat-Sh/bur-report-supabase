@@ -1,47 +1,46 @@
-<!DOCTYPE html>
-<html>
-<head><title>Пользователи</title></head>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Пользователи — BurReport</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
 <body>
+<header class="topbar">
+<div>Диспетчер: {{ user.username }}</div>
+<a href="/reports">Сводки</a>
+</header>
 
+
+<main class="container">
 <h1>Пользователи</h1>
 
-<table border="1" cellpadding="6">
-<tr>
-    <th>ID</th>
-    <th>Логин</th>
-    <th>Имя</th>
-    <th>Роль</th>
-</tr>
 
+<table>
+<thead><tr><th>ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Создан</th></tr></thead>
+<tbody>
 {% for u in users %}
 <tr>
-    <td>{{u.id}}</td>
-    <td>{{u.username}}</td>
-    <td>{{u.full_name}}</td>
-    <td>{{u.role}}</td>
+<td>{{ u.id }}</td>
+<td>{{ u.username }}</td>
+<td>{{ u.full_name }}</td>
+<td>{{ u.role }}</td>
+<td>{{ u.created_at }}</td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 
+
 <h2>Создать пользователя</h2>
-<form action="/users" method="post">
-    <label>Логин</label><br>
-    <input name="username"><br>
-
-    <label>Пароль</label><br>
-    <input name="password"><br>
-
-    <label>ФИО</label><br>
-    <input name="full_name"><br>
-
-    <label>Роль</label><br>
-    <select name="role">
-        <option value="bur">bur</option>
-        <option value="dispatcher">dispatcher</option>
-    </select><br><br>
-
-    <button>Создать</button>
+<form method="post" action="/users/create">
+<label>Логин <input name="username" required /></label>
+<label>ФИО <input name="full_name" /></label>
+<label>Роль <select name="role"><option value="bur">bur</option><option value="dispatcher">dispatcher</option></select></label>
+<label>Пароль <input name="password" type="password" required /></label>
+<button type="submit">Создать</button>
 </form>
-
+</main>
 </body>
 </html>
