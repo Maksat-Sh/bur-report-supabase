@@ -14,6 +14,7 @@ import os
 from fastapi.staticfiles import StaticFiles
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+<link rel="stylesheet" href="/static/style.css">
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
