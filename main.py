@@ -11,6 +11,10 @@ from datetime import datetime, timedelta
 import jwt
 from argon2 import PasswordHasher
 import os
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
