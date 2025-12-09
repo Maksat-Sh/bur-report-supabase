@@ -1,77 +1,66 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Форма буровика</title>
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Форма буровика</title>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>Пользователь: {{ user.username }}</div>
-    <a href="/logout">Выйти</a>
-    <a href="/dispatcher">Диспетчер</a>
-  </header>
+<header class="topbar">
+<div>Отправка отчёта</div>
+</header>
 
-  <main class="container">
-    <h1>Отчёт буровика</h1>
 
-    <form id="burForm" method="post" action="/api/reports">
-      <label>Дата/время
-        <input type="text" name="created_at" value="{{ '%Y-%m-%d %H:%M:%S' | format() }}" />
-      </label>
+<main class="container">
+<h1>Отчёт буровика</h1>
 
-      <label>Участок
-        <select name="section" required>
-          <option value="">—</option>
-          {% for s in sections %}
-            <option value="{{ s }}">{{ s }}</option>
-          {% endfor %}
-        </select>
-      </label>
 
-      <label>Номер буровой установки
-        <input name="rig_number" />
-      </label>
+<form id="burForm" method="post" action="/report">
+<label>Имя/логин
+<input name="username" required />
+</label>
 
-      <label>Метраж
-        <input name="metrazh" />
-      </label>
 
-      <label>Погонометр
-        <input name="pogonometr" />
-      </label>
+<label>ФИО
+<input name="full_name" />
+</label>
 
-      <label>Примечание
-        <textarea name="note"></textarea>
-      </label>
 
-      <button type="submit">Отправить сводку</button>
-    </form>
+<label>Участок
+<input name="area" />
+</label>
 
-    <div id="result"></div>
-  </main>
 
-  <script>
-    // submit form via fetch to give inline feedback
-    const form = document.getElementById('burForm');
-    const result = document.getElementById('result');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = new FormData(form);
-      const body = new URLSearchParams();
-      for (const [k, v] of data.entries()) body.append(k, v);
-      try {
-        const res = await fetch('/api/reports', { method: 'POST', body, credentials: 'same-origin' });
-        const json = await res.json();
-        if (!res.ok) throw json;
-        result.innerHTML = '<div class="ok">Отчёт отправлен</div>';
-        form.reset();
-      } catch (err) {
-        console.error(err);
-        result.innerHTML = '<div class="error">Ошибка отправки: ' + (err.detail || err.message || '...') + '</div>';
-      }
-    });
-  </script>
+<label>Номер буровой установки
+<input name="rig" />
+</label>
+
+
+<label>Метраж
+<input name="meter" />
+</label>
+
+
+<label>Погонометр
+<input name="pognometr" />
+</label>
+
+
+<label>Вид операции
+<input name="operation" />
+</label>
+
+
+<label>Примечание
+<textarea name="comment"></textarea>
+</label>
+
+
+<button type="submit">Отправить сводку</button>
+</form>
+
+
+</main>
 </body>
 </html>
