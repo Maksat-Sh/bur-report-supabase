@@ -1,45 +1,47 @@
 <!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>Пользователи</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
+<html>
+<head><title>Пользователи</title></head>
 <body>
 
-<h2>Пользователи</h2>
-<a href="/dispatcher">← назад</a>
-<hr>
+<h1>Пользователи</h1>
 
-<h3>Добавить буровика</h3>
+<table border="1" cellpadding="6">
+<tr>
+    <th>ID</th>
+    <th>Логин</th>
+    <th>Имя</th>
+    <th>Роль</th>
+</tr>
 
-<form action="/users/create" method="post" class="box">
-  <label>Имя пользователя</label>
-  <input name="username" required>
-
-  <label>ФИО</label>
-  <input name="full_name" required>
-
-  <label>Пароль</label>
-  <input name="password" type="password" required>
-
-  <button>Создать</button>
-</form>
-
-<hr>
-
-<h3>Все пользователи</h3>
-<table>
-<tr><th>ID</th><th>Логин</th><th>ФИО</th><th>Роль</th></tr>
 {% for u in users %}
 <tr>
-<td>{{u.id}}</td>
-<td>{{u.username}}</td>
-<td>{{u.full_name}}</td>
-<td>{{u.role}}</td>
+    <td>{{u.id}}</td>
+    <td>{{u.username}}</td>
+    <td>{{u.full_name}}</td>
+    <td>{{u.role}}</td>
 </tr>
 {% endfor %}
 </table>
+
+<h2>Создать пользователя</h2>
+<form action="/users" method="post">
+    <label>Логин</label><br>
+    <input name="username"><br>
+
+    <label>Пароль</label><br>
+    <input name="password"><br>
+
+    <label>ФИО</label><br>
+    <input name="full_name"><br>
+
+    <label>Роль</label><br>
+    <select name="role">
+        <option value="bur">bur</option>
+        <option value="dispatcher">dispatcher</option>
+    </select><br><br>
+
+    <button>Создать</button>
+</form>
 
 </body>
 </html>
