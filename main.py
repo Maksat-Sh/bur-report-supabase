@@ -13,11 +13,12 @@ from argon2 import PasswordHasher
 import os
 from fastapi.staticfiles import StaticFiles
 
-
+app = FastAPI()
 # --- config ---
 DATABASE_URL = os.getenv("DATABASE_URL")
+
 if not DATABASE_URL:
-raise RuntimeError("Set DATABASE_URL environment variable")
+    raise RuntimeError("Set DATABASE_URL environment variable")
 
 
 # Use asyncpg driver in DATABASE_URL, e.g.:
