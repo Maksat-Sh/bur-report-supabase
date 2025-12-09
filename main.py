@@ -13,9 +13,12 @@ from argon2 import PasswordHasher
 import os
 from fastapi.staticfiles import StaticFiles
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-<link rel="stylesheet" href="/static/style.css">
+# ---- ВАЖНО ----
+app = FastAPI()
 
+# только ПОСЛЕ app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+<form method="post" action="/token">
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
