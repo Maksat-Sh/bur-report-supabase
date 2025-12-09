@@ -103,6 +103,8 @@ async def dispatcher(request: Request):
         return RedirectResponse("/burform")
 
     return templates.TemplateResponse("dispatcher.html", {"request": request})
+if request.session.get("role") != "dispatcher":
+    return RedirectResponse("/login")
 
 
 @app.get("/api/reports")
