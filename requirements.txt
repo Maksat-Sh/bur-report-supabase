@@ -14,3 +14,4 @@ pandas
 requests
 supabase
 sqlalchemy
+bcrypt
