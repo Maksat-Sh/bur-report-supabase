@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Сводки — BurReport</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+<div>{{ user.username }}</div>
+</header>
+<main class="container">
+<h1>Сводки</h1>
+<table>
+<thead><tr><th>ID</th><th>Дата</th><th>Бур</th><th>Участок</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th></tr></thead>
+<tbody>
+{% for r in reports %}
+<tr>
+<td>{{ r.id }}</td>
+<td>{{ r.created_at }}</td>
+<td>{{ r.username }}</td>
+<td>{{ r.area }}</td>
+<td>{{ r.meter }}</td>
+<td>{{ r.pognometr }}</td>
+<td>{{ r.comment }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</main>
+</body>
+</html>
