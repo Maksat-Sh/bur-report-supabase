@@ -29,7 +29,12 @@ app.add_middleware(
 
 
 async def db():
-    return await asyncpg.connect(DATABASE_URL)
+    conn = await asyncpg.connect(
+        dsn=DATABASE_URL,
+        ssl="require"
+    )
+    return conn
+
 
 # ---------------------------
 # helper for authorization
