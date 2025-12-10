@@ -15,8 +15,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,
-    connect_args={"ssl": "require"}
+    pool_pre_ping=True,
 )
 
 Base = declarative_base()
