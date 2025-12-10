@@ -1,199 +1,189 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.staticfiles import StaticFiles
-
-from sqlalchemy import select, Column, Integer, String, Text, DateTime
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-
-from datetime import datetime, timedelta
-from argon2 import PasswordHasher
-import jwt
 import os
+from fastapi import FastAPI, Request, Depends, HTTPException, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
+from passlib.context import CryptContext
+from datetime import datetime
+from dotenv import load_dotenv
 
+load_dotenv()
 
-# ------------------ APP ---------------------
-
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-templates = Jinja2Templates(directory="templates")
-
-
-# ------------------ DB ----------------------
+# ================== DB =====================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set")
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
+# ================== PASSWORDS ==============
 
-# ------------------ Auth ---------------------
+pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = "supersecret"
-ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
-argon2 = PasswordHasher()
-
-
-# ------------------ MODELS --------------------
+# ================== MODELS =================
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    username = Column(String)
-    full_name = Column(String)
-    role = Column(String)
-    password_hash = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    username = Column(String, unique=True)
+    password = Column(String)
+    role = Column(String)  # admin or worker
 
 
 class Report(Base):
     __tablename__ = "reports"
     id = Column(Integer, primary_key=True)
-    username = Column(String)
-    full_name = Column(String)
+    datetime = Column(DateTime, default=datetime.utcnow)
+    site = Column(String)
     rig = Column(String)
-    area = Column(String)
-    meter = Column(String)
+    meters = Column(String)
     pognometr = Column(String)
     operation = Column(String)
-    comment = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    person = Column(String)
+    note = Column(Text)
 
 
-# ------------------ UTILS ---------------------
-
-async def get_db():
-    async with async_session() as session:
-        yield session
+Base.metadata.create_all(bind=engine)
 
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    to_encode["exp"] = datetime.utcnow() + timedelta(days=5)
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+# ========== create default admin ==============
+
+def create_admin():
+    db = SessionLocal()
+    admin = db.query(User).filter_by(role="admin").first()
+    if admin is None:
+        login = os.getenv("ADMIN_LOGIN", "admin")
+        pwd_raw = os.getenv("ADMIN_PASSWORD", "admin")
+
+        hashed = pwd.hash(pwd_raw)
+
+        new_admin = User(
+            username=login,
+            password=hashed,
+            role="admin"
+        )
+        db.add(new_admin)
+        db.commit()
+    db.close()
+
+create_admin()
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+# ================== FASTAPI ==================
+
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ============= AUTH =========================
+
+def get_db():
+    db = SessionLocal()
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        result = await db.execute(select(User).where(User.username == username))
-        user = result.scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401)
-        return user
-    except:
-        raise HTTPException(status_code=401)
+        yield db
+    finally:
+        db.close()
 
 
-# ------------------ TOKEN ---------------------
-
-@app.post("/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.username == form_data.username))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=401)
-
-    try:
-        argon2.verify(user.password_hash, form_data.password)
-    except:
-        raise HTTPException(status_code=401)
-
-    token = create_access_token({"sub": user.username, "role": user.role})
-    return {"access_token": token, "token_type": "bearer"}
+def auth_required(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
 
 
-# ------------------ PAGES ---------------------
+# ================== ROUTES ===================
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def root():
     return RedirectResponse("/login")
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+async def login_page():
+    return open("templates/login.html", encoding="utf8").read()
 
 
-@app.get("/reports", response_class=HTMLResponse)
-async def reports_page(request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Report).order_by(Report.created_at.desc()))
-    rows = result.scalars().all()
-    return templates.TemplateResponse("reports.html", {"request": request, "user": user, "reports": rows})
-
-
-@app.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if user.role != "dispatcher":
-        raise HTTPException(status_code=403)
-
-    result = await db.execute(select(User).order_by(User.id))
-    rows = result.scalars().all()
-    return templates.TemplateResponse("users.html", {"request": request, "user": user, "users": rows})
-
-
-# ------------------ CREATE USER ---------------------
-
-@app.post("/users/create")
-async def create_user(
+@app.post("/login")
+async def login(
+    request: Request,
     username: str = Form(...),
-    full_name: str = Form(...),
-    role: str = Form(...),
     password: str = Form(...),
-    current=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: SessionLocal = Depends(get_db)
 ):
-    if current.role != "dispatcher":
-        raise HTTPException(status_code=403)
+    user = db.query(User).filter(User.username == username).first()
 
-    password_hash = argon2.hash(password)
+    if not user or not pwd.verify(password, user.password):
+        return HTMLResponse("<h3>Неправильные логин или пароль</h3>")
 
-    user = User(
-        username=username,
-        full_name=full_name,
-        role=role,
-        password_hash=password_hash
-    )
-    db.add(user)
-    await db.commit()
+    request.session = {"user": user.username, "role": user.role}
 
-    return RedirectResponse("/users", status_code=302)
+    if user.role == "admin":
+        return RedirectResponse("/dispatcher", status_code=302)
+    return RedirectResponse("/burform", status_code=302)
 
 
-# ------------------ REPORT ---------------------
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher(request: Request):
+    if not request.session or request.session.get("role") != "admin":
+        return RedirectResponse("/login")
 
-@app.post("/report")
-async def submit_report(
+    return open("templates/dispatcher.html", encoding="utf8").read()
+
+
+@app.get("/burform", response_class=HTMLResponse)
+async def burform(request: Request):
+    return open("templates/burform.html", encoding="utf8").read()
+
+
+# ====== API add user (admin can create users) ======
+
+@app.post("/create_user")
+async def create_user(
+    request: Request,
     username: str = Form(...),
-    full_name: str = Form(...),
+    password: str = Form(...),
+    db: SessionLocal = Depends(get_db)
+):
+
+    if request.session.get("role") != "admin":
+        return {"error": "only admin"}
+
+    hashed = pwd.hash(password)
+
+    user = User(username=username, password=hashed, role="worker")
+    db.add(user)
+    db.commit()
+    return {"message": "ok"}
+
+
+# ========= submit report =====================
+
+@app.post("/submit")
+async def submit(
+    site: str = Form(...),
     rig: str = Form(...),
-    area: str = Form(...),
-    meter: str = Form(...),
+    meters: str = Form(...),
     pognometr: str = Form(...),
     operation: str = Form(...),
-    comment: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    person: str = Form(...),
+    note: str = Form(...),
+    db: SessionLocal = Depends(get_db)
 ):
-    report = Report(
-        username=username,
-        full_name=full_name,
+    r = Report(
+        site=site,
         rig=rig,
-        area=area,
-        meter=meter,
+        meters=meters,
         pognometr=pognometr,
         operation=operation,
-        comment=comment,
+        person=person,
+        note=note
     )
-    db.add(report)
-    await db.commit()
-    return {"message": "OK"}
+    db.add(r)
+    db.commit()
+
+    return {"message": "ok"}
