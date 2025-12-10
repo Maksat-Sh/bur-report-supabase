@@ -19,7 +19,7 @@ ssl_ctx.verify_mode = ssl.CERT_NONE
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,
-    connect_args={"ssl": ssl_ctx}
+    connect_args={"ssl": "require"}
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
