@@ -12,26 +12,37 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-ssl_ctx = ssl.create_default_context()
-ssl_ctx.check_hostname = False  
-ssl_ctx.verify_mode = ssl.CERT_NONE  
-
-import ssl
-
-ssl_context = ssl.create_default_context()
+Base = declarative_base()
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"ssl": ssl_context}
+    pool_pre_ping=True,
+    connect_args={
+        "ssl": "require"
+    }
 )
 
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
-
+async_session = sessionmaker(
+    engine,
+    expire_on_commit=False,
+    class_=AsyncSession
+)
 
 app = FastAPI()
 
+# миграция
+async def init_models():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+@app.on_event("startup")
+async def on_start():
+    await init_models()
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
 
 class Report(Base):
     __tablename__ = "reports"
