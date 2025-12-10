@@ -18,3 +18,4 @@ bcrypt
 asyncpg
 sqlalchemy[asyncio]
 python-jose
+psycopg2-binary
