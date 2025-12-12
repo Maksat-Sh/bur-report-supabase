@@ -7,7 +7,7 @@ from database import engine, AsyncSessionLocal
 from models import Base, User, Report
 from schemas import ReportCreate
 from auth import hash_password, verify_password, create_access_token
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 import asyncio
 
 templates = Jinja2Templates(directory='templates')
