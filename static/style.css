@@ -1,10 +1,1 @@
-body{font-family: Arial, Helvetica, sans-serif; background:#f6f8fa; color:#222}
-.container{max-width:900px;margin:24px auto;padding:18px;background:#fff;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:#0d6efd;color:#fff;border-radius:8px}
-label{display:block;margin:10px 0}
-input, textarea, select{width:100%;padding:8px;margin-top:6px;border:1px solid #ddd;border-radius:6px}
-button{background:#0d6efd;color:#fff;padding:10px 14px;border:none;border-radius:6px;cursor:pointer}
-.error{background:#ffe6e6;padding:8px;border:1px solid #f5c2c2;color:#a00}
-.ok{background:#e6ffe6;padding:8px;border:1px solid #bfe6bf;color:#060}
-table{width:100%;border-collapse:collapse;margin-top:12px}
-table th, table td{border:1px solid #eee;padding:8px;text-align:left}
+body{ font-family: Arial, sans-serif; margin:20px }
