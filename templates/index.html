@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Вход</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="box">
+    <h1>Авторизация</h1>
+
+    {% if request.query_params.error %}
+        <p class="err">Неправильные логин или пароль</p>
+    {% endif %}
+
+    <form method="post" action="/login">
+        <input name="username" placeholder="Логин" required>
+        <input name="password" placeholder="Пароль" type="password" required>
+        <button>Войти</button>
+    </form>
+</div>
+
+</body>
+</html>
