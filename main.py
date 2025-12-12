@@ -1,116 +1,72 @@
-import os
-from fastapi import FastAPI, Request, Form, Depends, HTTPException
+import os, urllib.parse
+from fastapi import FastAPI, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, func
-from dotenv import load_dotenv
-import ssl
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
+from database import engine, AsyncSessionLocal
+from models import Base, User, Report
+from schemas import ReportCreate
+from auth import hash_password, verify_password, create_access_token
+from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-Base = declarative_base()
-
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    connect_args={
-        "ssl": "require"
-    }
-)
-
-async_session = sessionmaker(
-    engine,
-    expire_on_commit=False,
-    class_=AsyncSession
-)
-
+templates = Jinja2Templates(directory='templates')
 app = FastAPI()
 
-# миграция
+# Create DB tables on startup
 async def init_models():
+    # create tables (sync engine via greenlet spawn is handled by SQLAlchemy)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 @app.on_event("startup")
 async def on_start():
     await init_models()
+    # create a default dispatcher user if not exists
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.username == 'dispatcher'))
+        user = result.scalar_one_or_none()
+        if not user:
+            u = User(username='dispatcher', hashed_password=hash_password('1234'), is_dispatcher=True)
+            db.add(u)
+            await db.commit()
 
-@app.get("/")
-async def root():
-    return {"status": "ok"}
-
-class Report(Base):
-    __tablename__ = "reports"
-
-    id = Column(Integer, primary_key=True, index=True)
-    datetime = Column(DateTime(timezone=True), server_default=func.now())
-    plot = Column(String)
-    rig = Column(String)
-    depth = Column(String)
-    meter = Column(String)
-    operation = Column(String)
-    person = Column(String)
-    note = Column(String)
-
-
-async def init_models():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-@app.on_event("startup")
-async def on_start():
-    await init_models()
-
-
-async def get_db():
+# Dependency
+async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         yield session
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 @app.get("/", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    return RedirectResponse("/dispatcher")
+async def index(request: Request):
+    return templates.TemplateResponse("dispatcher.html", {"request": request})
 
+@app.post("/token")
+async def login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
+    # authenticate
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    token = create_access_token({"sub": user.username})
+    # simple redirect to dispatcher page (in real app, you'd return token JSON)
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie("access_token", token)
+    return resp
 
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page():
-    return open("dispatcher.html", encoding="utf-8").read()
-
-
-@app.post("/submit")
-async def submit(
-        plot: str = Form(...),
-        rig: str = Form(...),
-        depth: str = Form(...),
-        meter: str = Form(...),
-        operation: str = Form(...),
-        person: str = Form(...),
-        note: str = Form(...),
-        db: AsyncSession = Depends(get_db)
-):
-    rep = Report(
-        plot=plot,
-        rig=rig,
-        depth=depth,
-        meter=meter,
-        operation=operation,
-        person=person,
-        note=note
+@app.post("/reports")
+async def create_report(report: ReportCreate, db: AsyncSession = Depends(get_db)):
+    r = Report(
+        site=report.site,
+        rig_number=report.rig_number,
+        metraj=report.metraj or 0.0,
+        pogonometr=report.pogonometr,
+        note=report.note,
     )
-    db.add(rep)
+    db.add(r)
     await db.commit()
-    return {"message": "Report submitted successfully"}
-
-
-@app.get("/reports")
-async def get_reports(db: AsyncSession = Depends(get_db)):
-    r = await db.execute(
-        Report.__table__.select().order_by(Report.id.desc())
-    )
-    return r.fetchall()
+    await db.refresh(r)
+    return {"message": "Report submitted successfully", "id": r.id}
