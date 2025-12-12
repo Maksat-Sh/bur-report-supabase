@@ -1,83 +1,212 @@
-import os, urllib.parse
-from fastapi import FastAPI, Depends, Request, Form, HTTPException
+import os
+import bcrypt
+from datetime import datetime
+from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
-from database import engine, AsyncSessionLocal
-from models import Base, User, Report
-from schemas import ReportCreate
-from auth import hash_password, verify_password, create_access_token
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-import asyncio
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Integer, String, DateTime, Text
+
+# ----------------------------- CONFIG ---------------------------------
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True,
-    connect_args={
-        "ssl": "require"
-    }
-)
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL не найден в переменных окружения!")
 
+# Убираем sslmode — asyncpg сам включает SSL на Render
+if "sslmode" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("?")[0]
+
+engine = create_async_engine(DATABASE_URL, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-templates = Jinja2Templates(directory='templates')
-app = FastAPI()
 
-# Create DB tables on startup
-async def init_models():
-    # create tables (sync engine via greenlet spawn is handled by SQLAlchemy)
+
+# ----------------------------- MODELS ---------------------------------
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20))  # dispatcher, bur
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    datetime: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    area: Mapped[str] = mapped_column(String(200))
+    rig_number: Mapped[str] = mapped_column(String(200))
+    depth: Mapped[str] = mapped_column(String(200))
+    pogon: Mapped[str] = mapped_column(String(200))
+    operation: Mapped[str] = mapped_column(String(200))
+    responsible: Mapped[str] = mapped_column(String(200))
+    note: Mapped[str] = mapped_column(Text)
+
+
+# ----------------------------- INIT DB ---------------------------------
+
+
+async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(select(User))
+        users = result.scalars().all()
+
+        if not users:
+            # Создаём диспетчера
+            pwd = bcrypt.hashpw("1234".encode(), bcrypt.gensalt()).decode()
+            session.add(User(username="dispatcher", password_hash=pwd, role="dispatcher"))
+
+            # Создаём буровиков
+            b1 = bcrypt.hashpw("123".encode(), bcrypt.gensalt()).decode()
+            b2 = bcrypt.hashpw("123".encode(), bcrypt.gensalt()).decode()
+
+            session.add(User(username="bur1", password_hash=b1, role="bur"))
+            session.add(User(username="bur2", password_hash=b2, role="bur"))
+
+            await session.commit()
+
+
+# ----------------------------- APP ---------------------------------
+
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+
 @app.on_event("startup")
 async def on_start():
-    await init_models()
-    # create a default dispatcher user if not exists
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.username == 'dispatcher'))
+    await init_db()
+
+
+# ----------------------------- AUTH ---------------------------------
+
+async def get_current_user(request: Request):
+    username = request.cookies.get("user")
+    if not username:
+        return None
+
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+        result = await session.execute(select(User).where(User.username == username))
+        return result.scalar_one_or_none()
+
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(select(User).where(User.username == username))
         user = result.scalar_one_or_none()
+
         if not user:
-            u = User(username='dispatcher', hashed_password=hash_password('1234'), is_dispatcher=True)
-            db.add(u)
-            await db.commit()
+            return RedirectResponse("/?error=1", status_code=302)
 
-# Dependency
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        yield session
+        if not bcrypt.checkpw(password.encode(), user.password_hash.encode()):
+            return RedirectResponse("/?error=1", status_code=302)
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+        # redirect по ролям
+        resp = RedirectResponse(
+            "/dispatcher" if user.role == "dispatcher" else "/burform", status_code=302
+        )
+        resp.set_cookie("user", user.username)
+        return resp
+
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse("dispatcher.html", {"request": request})
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.post("/token")
-async def login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
-    # authenticate
-    result = await db.execute(select(User).where(User.username == username))
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
-    token = create_access_token({"sub": user.username})
-    # simple redirect to dispatcher page (in real app, you'd return token JSON)
-    resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie("access_token", token)
-    return resp
 
-@app.post("/reports")
-async def create_report(report: ReportCreate, db: AsyncSession = Depends(get_db)):
-    r = Report(
-        site=report.site,
-        rig_number=report.rig_number,
-        metraj=report.metraj or 0.0,
-        pogonometr=report.pogonometr,
-        note=report.note,
+# ------------------------- DISPATCHER PANEL ---------------------------
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher(request: Request, user=Depends(get_current_user)):
+    if not user or user.role != "dispatcher":
+        return RedirectResponse("/", status_code=302)
+
+    async with SessionLocal() as session:
+        from sqlalchemy import select
+        reports = (await session.execute(select(Report))).scalars().all()
+        users = (await session.execute(select(User))).scalars().all()
+
+    return templates.TemplateResponse(
+        "dispatcher.html",
+        {"request": request, "reports": reports, "users": users}
     )
-    db.add(r)
-    await db.commit()
-    await db.refresh(r)
-    return {"message": "Report submitted successfully", "id": r.id}
+
+
+# Create new user by dispatcher
+@app.post("/create_user")
+async def create_user(
+        request: Request,
+        username: str = Form(...),
+        password: str = Form(...),
+        role: str = Form(...)
+):
+    async with SessionLocal() as session:
+        pwd = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        session.add(User(username=username, password_hash=pwd, role=role))
+        await session.commit()
+
+    return RedirectResponse("/dispatcher", status_code=302)
+
+
+# ------------------------------- BUR FORM ------------------------------
+
+@app.get("/burform", response_class=HTMLResponse)
+async def burform(request: Request, user=Depends(get_current_user)):
+    if not user or user.role != "bur":
+        return RedirectResponse("/", status_code=302)
+
+    return templates.TemplateResponse("burform.html", {"request": request})
+
+
+@app.post("/burform")
+async def submit_form(
+        area: str = Form(...),
+        rig_number: str = Form(...),
+        depth: str = Form(...),
+        pogon: str = Form(...),
+        operation: str = Form(...),
+        responsible: str = Form(...),
+        note: str = Form("")
+):
+    async with SessionLocal() as session:
+        report = Report(
+            area=area,
+            rig_number=rig_number,
+            depth=depth,
+            pogon=pogon,
+            operation=operation,
+            responsible=responsible,
+            note=note
+        )
+        session.add(report)
+        await session.commit()
+
+    return RedirectResponse("/burform?ok=1", status_code=302)
+
+
+@app.get("/logout")
+async def logout():
+    resp = RedirectResponse("/", status_code=302)
+    resp.delete_cookie("user")
+    return resp
