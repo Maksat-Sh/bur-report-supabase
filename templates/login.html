@@ -1,31 +1,16 @@
 <!doctype html>
-<html lang="ru">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Login — BurReport</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-<main class="container">
-<h1>Вход</h1>
-{% if request.query_params.get('error') %}
-<div class="error">Неправильные логин или пароль.</div>
-{% endif %}
-<form method="post" action="/token">
-<label>Логин
-<input name="username" required />
-</label>
-<label>Пароль
-<input type="password" name="password" required />
-</label>
-<button type="submit">Войти</button>
-</form>
-
-
-<div class="notes">
-<p>Примечание: этот экран использует токенный вход (OAuth2 password flow). Для теста можно POST /token с form-data.</p>
-</div>
-</main>
-</body>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <h1>Login</h1>
+    <form action="/token" method="post">
+      <label>Username: <input name="username"></label><br>
+      <label>Password: <input name="password" type="password"></label><br>
+      <button type="submit">Login</button>
+    </form>
+  </body>
 </html>
