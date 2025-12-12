@@ -1,13 +1,59 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>Dispatcher</title>
+<head>
+    <meta charset="UTF-8">
+    <title>Диспетчер</title>
     <link rel="stylesheet" href="/static/style.css">
-  </head>
-  <body>
-    <h1>Dispatcher panel</h1>
-    <p>Simple list of reports will appear here (this is a minimal scaffold).</p>
-    <a href="/login">Back to login</a>
-  </body>
+</head>
+<body>
+
+<a href="/logout" class="logout">Выйти</a>
+
+<div class="box">
+    <h2>Создать пользователя</h2>
+
+    <form method="post" action="/create_user">
+        <input name="username" placeholder="Логин" required>
+        <input name="password" placeholder="Пароль" required>
+        <select name="role">
+            <option value="bur">Буровик</option>
+            <option value="dispatcher">Диспетчер</option>
+        </select>
+        <button>Создать</button>
+    </form>
+</div>
+
+<div class="box">
+    <h2>Сводки</h2>
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Дата</th>
+            <th>Участок</th>
+            <th>№ буровой</th>
+            <th>Метраж</th>
+            <th>Погонометр</th>
+            <th>Операция</th>
+            <th>Ответственный</th>
+            <th>Примечание</th>
+        </tr>
+
+        {% for r in reports %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.datetime }}</td>
+            <td>{{ r.area }}</td>
+            <td>{{ r.rig_number }}</td>
+            <td>{{ r.depth }}</td>
+            <td>{{ r.pogon }}</td>
+            <td>{{ r.operation }}</td>
+            <td>{{ r.responsible }}</td>
+            <td>{{ r.note }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+</body>
 </html>
