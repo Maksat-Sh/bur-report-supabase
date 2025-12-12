@@ -9,7 +9,18 @@ from schemas import ReportCreate
 from auth import hash_password, verify_password, create_access_token
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 import asyncio
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    future=True,
+    connect_args={
+        "ssl": "require"
+    }
+)
+
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 templates = Jinja2Templates(directory='templates')
 app = FastAPI()
 
