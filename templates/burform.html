@@ -1,66 +1,47 @@
-<!doctype html>
-<html lang="ru">
+<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Форма буровика</title>
-<link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <title>Сводка буровика</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-<div>Отправка отчёта</div>
-</header>
 
+<a href="/logout" class="logout">Выйти</a>
 
-<main class="container">
-<h1>Отчёт буровика</h1>
+<div class="box">
+    <h2>Сводка буровика</h2>
 
+    {% if request.query_params.ok %}
+        <p class="ok">Отправлено!</p>
+    {% endif %}
 
-<form id="burForm" method="post" action="/report">
-<label>Имя/логин
-<input name="username" required />
-</label>
+    <form method="post">
 
+        <label>Участок</label>
+        <input name="area" required>
 
-<label>ФИО
-<input name="full_name" />
-</label>
+        <label>№ буровой</label>
+        <input name="rig_number" required>
 
+        <label>Метраж</label>
+        <input name="depth" required>
 
-<label>Участок
-<input name="area" />
-</label>
+        <label>Погонометр</label>
+        <input name="pogon" required>
 
+        <label>Вид операции</label>
+        <input name="operation" required>
 
-<label>Номер буровой установки
-<input name="rig" />
-</label>
+        <label>Ответственное лицо</label>
+        <input name="responsible" required>
 
+        <label>Примечание</label>
+        <textarea name="note"></textarea>
 
-<label>Метраж
-<input name="meter" />
-</label>
+        <button>Отправить</button>
+    </form>
+</div>
 
-
-<label>Погонометр
-<input name="pognometr" />
-</label>
-
-
-<label>Вид операции
-<input name="operation" />
-</label>
-
-
-<label>Примечание
-<textarea name="comment"></textarea>
-</label>
-
-
-<button type="submit">Отправить сводку</button>
-</form>
-
-
-</main>
 </body>
 </html>
