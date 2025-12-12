@@ -1,199 +1,201 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, Integer, String, Float, DateTime, select
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, DateTime, Text
+from datetime import datetime, timedelta
+import jwt
 
-import pandas as pd
-from io import BytesIO
-
-# -----------------------------
-# Настройки
-# -----------------------------
+# ==========================
+# ENV
+# ==========================
 DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
+ALGORITHM = "HS256"
 
-if DATABASE_URL is None:
-    raise RuntimeError("DATABASE_URL не найден в .env")
-
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-Base = declarative_base()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
-app = FastAPI()
+# ==========================
+# DATABASE
+# ==========================
+engine = create_async_engine(DATABASE_URL, echo=False)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+Base = declarative_base()
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
-# -----------------------------
-# Модели
-# -----------------------------
+# ==========================
+# MODELS
+# ==========================
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     username = Column(String, unique=True)
-    password_hash = Column(String)
-    role = Column(String)  # driller / dispatcher
+    hashed_password = Column(String)
+    role = Column(String)  # admin / driller
 
 
 class Report(Base):
     __tablename__ = "reports"
 
-    id = Column(Integer, primary_key=True, index=True)
-    datetime = Column(DateTime, server_default=func.now())
-    area = Column(String)
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    section = Column(String)
     rig_number = Column(String)
-    depth = Column(Float)
-    pogon = Column(Float)
-    operation = Column(String)
+    meterage = Column(String)
+    pogonometr = Column(String)
+    operation_type = Column(String)
     responsible = Column(String)
-    note = Column(String)
-    user_id = Column(Integer)
+    note = Column(Text)
 
-# -----------------------------
-# Утилиты
-# -----------------------------
+
+# ==========================
+# SCHEMAS
+# ==========================
+class CreateUser(BaseModel):
+    username: str
+    password: str
+    role: str
+
+
+class CreateReport(BaseModel):
+    section: str
+    rig_number: str
+    meterage: str
+    pogonometr: str
+    operation_type: str
+    responsible: str
+    note: str | None = None
+
+
+# ==========================
+# UTILS
+# ==========================
+def create_token(data: dict):
+    to_encode = data.copy()
+    to_encode["exp"] = datetime.utcnow() + timedelta(hours=12)
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
 async def get_db():
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         yield session
 
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
 
-def hash_password(pwd):
-    return pwd_context.hash(pwd)
+async def get_user_by_username(db, username):
+    q = await db.execute(
+        User.__table__.select().where(User.username == username)
+    )
+    return q.scalar_one_or_none()
 
-# -----------------------------
-# Создание таблиц
-# -----------------------------
+
+def verify_password(password, hashed):
+    return pwd_context.verify(password, hashed)
+
+
+def hash_password(password):
+    return pwd_context.hash(password)
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+    except:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = await get_user_by_username(db, username)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
+
+
+async def require_admin(user=Depends(get_current_user)):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    return user
+
+
+# ==========================
+# APP
+# ==========================
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ==========================
+# STARTUP — создаём таблицы
+# ==========================
 @app.on_event("startup")
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-# -----------------------------
-# Маршруты
-# -----------------------------
 
-# Главная — вход диспетчера
-@app.get("/", response_class=HTMLResponse)
-async def dispatcher_login_page(request: Request):
-    return templates.TemplateResponse("dispatcher_login.html", {"request": request})
+# ==========================
+# AUTH
+# ==========================
+@app.post("/login")
+async def login(form: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
+    user = await get_user_by_username(db, form.username)
+    if not user:
+        raise HTTPException(status_code=400, detail="Wrong username")
 
-# Логин диспетчера
-@app.post("/dispatcher/login")
-async def dispatcher_login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(User).where(User.username == username))
-    user = q.scalars().first()
+    if not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Wrong password")
 
-    if not user or not verify_password(password, user.password_hash) or user.role != "dispatcher":
-        raise HTTPException(status_code=400, detail="Неправильные логин или пароль")
+    token = create_token({"sub": user.username})
+    return {"access_token": token, "token_type": "bearer", "role": user.role}
 
-    return {"message": "dispatcher_ok"}
 
-# Интерфейс диспетчера
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request, db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(Report).order_by(Report.id.desc()))
-    reports = q.scalars().all()
-    return templates.TemplateResponse("dispatcher.html", {"request": request, "reports": reports})
+# ==========================
+# ADMIN: создать пользователя
+# ==========================
+@app.post("/users/create")
+async def create_user(data: CreateUser, admin=Depends(require_admin), db=Depends(get_db)):
+    existing = await get_user_by_username(db, data.username)
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists")
 
-# Создание пользователя
-@app.post("/dispatcher/create_user")
-async def create_user(
-    username: str = Form(...),
-    password: str = Form(...),
-    role: str = Form(...),
-    db: AsyncSession = Depends(get_db)
-):
-    h = hash_password(password)
-    user = User(username=username, password_hash=h, role=role)
-    db.add(user)
-    await db.commit()
-    return {"message": "user_created"}
-
-# -----------------------------
-# Буровик
-# -----------------------------
-
-# Страница буровика
-@app.get("/driller", response_class=HTMLResponse)
-async def driller_page(request: Request):
-    return templates.TemplateResponse("driller.html", {"request": request})
-
-# Логин буровика
-@app.post("/driller/login")
-async def driller_login(username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(User).where(User.username == username))
-    user = q.scalars().first()
-
-    if not user or not verify_password(password, user.password_hash) or user.role != "driller":
-        raise HTTPException(status_code=400, detail="Неправильные логин или пароль")
-
-    return {"message": "driller_ok", "user_id": user.id}
-
-# Отправка отчёта
-@app.post("/driller/send_report")
-async def send_report(
-    user_id: int = Form(...),
-    area: str = Form(...),
-    rig_number: str = Form(...),
-    depth: float = Form(...),
-    pogon: float = Form(...),
-    operation: str = Form(...),
-    responsible: str = Form(...),
-    note: str = Form(""),
-    db: AsyncSession = Depends(get_db)
-):
-    r = Report(
-        area=area,
-        rig_number=rig_number,
-        depth=depth,
-        pogon=pogon,
-        operation=operation,
-        responsible=responsible,
-        note=note,
-        user_id=user_id
+    new_user = User(
+        username=data.username,
+        hashed_password=hash_password(data.password),
+        role=data.role
     )
-    db.add(r)
+    db.add(new_user)
     await db.commit()
-    return {"message": "ok"}
 
-# -----------------------------
-# Экспорт Excel
-# -----------------------------
-@app.get("/dispatcher/export")
-async def export_excel(db: AsyncSession = Depends(get_db)):
+    return {"status": "OK", "message": "User created"}
 
-    q = await db.execute(select(Report).order_by(Report.id))
-    rows = q.scalars().all()
 
-    data = []
-    for r in rows:
-        data.append({
-            "ID": r.id,
-            "Дата/время": r.datetime,
-            "Участок": r.area,
-            "№ бур.агрегата": r.rig_number,
-            "Метраж": r.depth,
-            "Погонометр": r.pogon,
-            "Операция": r.operation,
-            "Ответственное лицо": r.responsible,
-            "Примечание": r.note,
-        })
+# ==========================
+# БУРОВОЙ: отправить отчёт
+# ==========================
+@app.post("/reports")
+async def add_report(report: CreateReport, user=Depends(get_current_user), db=Depends(get_db)):
+    new_r = Report(**report.dict())
+    db.add(new_r)
+    await db.commit()
+    return {"status": "OK"}
 
-    df = pd.DataFrame(data)
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
 
-    return FileResponse(output, media_type="application/vnd.ms-excel", filename="reports.xlsx")
+# ==========================
+# ДИСПЕТЧЕР: список отчётов
+# ==========================
+@app.get("/reports")
+async def get_reports(admin=Depends(require_admin), db=Depends(get_db)):
+    q = await db.execute(Report.__table__.select().order_by(Report.id.desc()))
+    return q.fetchall()
