@@ -1,1 +1,50 @@
-body{ font-family: Arial, sans-serif; margin:20px }
+body {
+    background: #f2f2f2;
+    font-family: Arial;
+}
+
+.box {
+    width: 520px;
+    background: #fff;
+    padding: 20px;
+    margin: 30px auto;
+    box-shadow: 0 0 10px #ccc;
+    border-radius: 6px;
+}
+
+input, textarea, select {
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 7px;
+}
+
+button {
+    padding: 10px;
+    width: 100%;
+    background: #2a7cff;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1b5fe0;
+}
+
+.logout {
+    float: right;
+    margin: 10px;
+}
+
+.err { color: red; }
+.ok { color: green; font-weight: bold; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 5px;
+}
