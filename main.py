@@ -1,96 +1,89 @@
 import os
-import ssl
-from fastapi import FastAPI, Depends, HTTPException, Request, Form
+from fastapi import FastAPI, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, func, select
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-# -------------------------------
-# Настройки
-# -------------------------------
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    async_sessionmaker,
+    AsyncSession
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String, select
+
+from passlib.context import CryptContext
+
+# ---------- НАСТРОЙКИ ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-engine = create_async_engine(
-    ASYNC_DATABASE_URL,
-    future=True
-)
+# ---------- БАЗА ----------
+class Base(DeclarativeBase):
+    pass
 
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-SessionLocal = sessionmaker(
-    bind=engine,
-    expire_on_commit=False,
-    class_=AsyncSession,
-)
-
-Base = declarative_base()
-
-# -------------------------------
-# Модели
-# -------------------------------
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True)
-    password = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String, unique=True)
+    password_hash: Mapped[str] = mapped_column(String)
 
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+)
 
-# -------------------------------
-# Приложение
-# -------------------------------
-app = FastAPI()
-
-# Статика и шаблоны
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 async def get_db():
     async with SessionLocal() as session:
         yield session
 
+# ---------- APP ----------
+app = FastAPI()
 
-# -------------------------------
-# Главная → редирект на /login
-# -------------------------------
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse("/login")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
-
-# -------------------------------
-# Логин (страница)
-# -------------------------------
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-# -------------------------------
-# Логин (POST)
-# -------------------------------
-@app.post("/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    query = select(User).where(User.username == form_data.username)
-    result = await db.execute(query)
-    user = result.scalars().first()
-
-    if not user or user.password != form_data.password:
-        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
-
-    return {"access_token": "ok", "token_type": "bearer"}
-
-
-# -------------------------------
-# Создание таблиц при старте
-# -------------------------------
+# ---------- STARTUP ----------
 @app.on_event("startup")
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # создать диспетчера, если нет
+    async with SessionLocal() as db:
+        result = await db.execute(select(User).where(User.username == "dispatcher"))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            db.add(User(
+                username="dispatcher",
+                password_hash=pwd_context.hash("1234")
+            ))
+            await db.commit()
+
+# ---------- ROUTES ----------
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return RedirectResponse("/login")
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/token")
+async def login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+
+    if not user or not pwd_context.verify(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+    return {"message": "OK"}
