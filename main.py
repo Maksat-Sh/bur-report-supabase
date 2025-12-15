@@ -1,89 +1,142 @@
 import os
-from fastapi import FastAPI, Request, Depends, Form, HTTPException
+from fastapi import FastAPI, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
-    AsyncSession
-)
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, select
-
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, Integer, String, Boolean, select
 from passlib.context import CryptContext
+from dotenv import load_dotenv
 
-# ---------- НАСТРОЙКИ ----------
+# ---------- ENV ----------
+load_dotenv()
+
 DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY", "secret")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ---------- DB ----------
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=True,
+    connect_args={
+        "ssl": "require"   # 🔥 ВАЖНО для Render
+    }
+)
 
-# ---------- БАЗА ----------
-class Base(DeclarativeBase):
-    pass
+AsyncSessionLocal = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
+Base = declarative_base()
+
+# ---------- MODELS ----------
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String, unique=True)
-    password_hash: Mapped[str] = mapped_column(String)
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    is_dispatcher = Column(Boolean, default=False)
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-)
+# ---------- SECURITY ----------
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
+def verify_password(password: str, hash: str) -> bool:
+    return pwd_context.verify(password, hash)
 
 # ---------- APP ----------
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
-# ---------- STARTUP ----------
+# ---------- DB INIT ----------
 @app.on_event("startup")
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # создать диспетчера, если нет
-    async with SessionLocal() as db:
-        result = await db.execute(select(User).where(User.username == "dispatcher"))
-        user = result.scalar_one_or_none()
+    # создаём диспетчера, если его нет
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User).where(User.username == "dispatcher")
+        )
+        dispatcher = result.scalar_one_or_none()
 
-        if not user:
-            db.add(User(
+        if not dispatcher:
+            dispatcher = User(
                 username="dispatcher",
-                password_hash=pwd_context.hash("1234")
-            ))
+                password_hash=hash_password("1234"),
+                is_dispatcher=True
+            )
+            db.add(dispatcher)
             await db.commit()
+
+# ---------- DEP ----------
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
 
 # ---------- ROUTES ----------
 @app.get("/", response_class=HTMLResponse)
-async def root():
+async def login_page():
     return RedirectResponse("/login")
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+async def login_form():
+    with open("templates/login.html", encoding="utf-8") as f:
+        return f.read()
 
-@app.post("/token")
+@app.post("/login")
 async def login(
+    request: Request,
     username: str = Form(...),
     password: str = Form(...),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(User).where(User.username == username))
+    result = await db.execute(
+        select(User).where(User.username == username)
+    )
     user = result.scalar_one_or_none()
 
-    if not user or not pwd_context.verify(password, user.password_hash):
+    if not user or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
-    return {"message": "OK"}
+    if user.is_dispatcher:
+        return RedirectResponse("/dispatcher", status_code=302)
+    else:
+        return RedirectResponse("/burform", status_code=302)
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page():
+    with open("templates/dispatcher.html", encoding="utf-8") as f:
+        return f.read()
+
+@app.post("/dispatcher/create-user")
+async def create_user(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == username)
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Пользователь уже существует")
+
+    user = User(
+        username=username,
+        password_hash=hash_password(password),
+        is_dispatcher=False
+    )
+    db.add(user)
+    await db.commit()
+
+    return RedirectResponse("/dispatcher", status_code=302)
+
+@app.get("/burform", response_class=HTMLResponse)
+async def burform():
+    with open("templates/burform.html", encoding="utf-8") as f:
+        return f.read()
