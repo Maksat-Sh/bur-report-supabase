@@ -1,35 +1,29 @@
 import os
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
+
+# 🔴 ВАЖНО: ssl="require"
 engine = create_async_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=0,
+    echo=True,
+    connect_args={
+        "ssl": "require"
+    }
 )
-
-AsyncSessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
-
-Base = declarative_base()
 
 app = FastAPI()
 
-
 @app.on_event("startup")
 async def startup():
-    # ⚠️ НЕ создаём таблицы автоматически
-    # Просто проверяем соединение
+    # Просто проверка соединения, БЕЗ create_all
     async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
-
+        await conn.execute("SELECT 1")
 
 @app.get("/")
 async def root():
-    return {"status": "ok"}
+    return {"status": "ok", "db": "connected"}
