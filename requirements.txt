@@ -1,8 +1,10 @@
-fastapi==0.110.0
-uvicorn[standard]==0.22.0
-SQLAlchemy==2.0.23
-asyncpg==0.29.0
-alembic==1.13.1
-python-dotenv==1.0.1
-passlib[bcrypt]==1.7.4
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+python-multipart
+jinja2
+passlib[bcrypt]
+python-dotenv
+
 
