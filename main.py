@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, Integer, String, DateTime, func, select
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -14,20 +14,14 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 # -------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set!")
-
-# === SSL FIX — обязательный для Render ===
-ssl_ctx = ssl.create_default_context()
-ssl_ctx.check_hostname = False
-ssl_ctx.verify_mode = ssl.CERT_NONE
+ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
 engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    connect_args={"ssl": ssl_ctx},     # ← ключевая строка!
+    ASYNC_DATABASE_URL,
+    future=True
 )
 
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 SessionLocal = sessionmaker(
     bind=engine,
     expire_on_commit=False,
