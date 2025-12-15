@@ -1,16 +1,23 @@
 import os
+import ssl
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
+
+# ✅ правильный SSL-контекст
+ssl_context = ssl.create_default_context()
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,
-    pool_pre_ping=True
+    connect_args={
+        "ssl": ssl_context
+    }
 )
 
 app = FastAPI()
