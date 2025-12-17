@@ -1,43 +1,48 @@
 import os
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy import text
-from sqlalchemy.pool import NullPool
 
-# =========================
+# ========================
 # DATABASE
-# =========================
+# ========================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+    raise RuntimeError("❌ DATABASE_URL is not set")
 
-# asyncpg + SSL (ОБЯЗАТЕЛЬНО для Render)
-DATABASE_URL_ASYNC = DATABASE_URL.replace(
+# Render требует SSL
+DATABASE_URL = DATABASE_URL.replace(
     "postgresql://",
     "postgresql+asyncpg://"
 )
 
 engine = create_async_engine(
-    DATABASE_URL_ASYNC,
+    DATABASE_URL,
     echo=False,
-    poolclass=NullPool,  # важно для бесплатного Render
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
     connect_args={
-        "ssl": "require"
-    }
+        "ssl": "require"   # 🔥 КЛЮЧЕВОЙ МОМЕНТ
+    },
 )
 
 AsyncSessionLocal = sessionmaker(
     engine,
     class_=AsyncSession,
-    expire_on_commit=False
+    expire_on_commit=False,
 )
 
-# =========================
-# APP
-# =========================
+class Base(DeclarativeBase):
+    pass
+
+
+# ========================
+# FASTAPI
+# ========================
 
 app = FastAPI()
 
@@ -45,13 +50,13 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup():
     """
-    Проверяем подключение к БД.
-    Соединение НЕ держим.
+    Минимальная проверка соединения.
+    Никаких create_all, никаких begin()
     """
     try:
-        async with engine.begin() as conn:
+        async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        print("✅ Database connected successfully")
+        print("✅ Database connected")
     except Exception as e:
         print("❌ Database connection failed:", e)
         raise
@@ -62,17 +67,10 @@ async def shutdown():
     await engine.dispose()
 
 
-# =========================
-# TEST ROUTE
-# =========================
+# ========================
+# ROUTES
+# ========================
 
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Render + PostgreSQL works"}
-
-
-@app.get("/db-test")
-async def db_test():
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(text("SELECT now()"))
-        return {"time": str(result.scalar())}
