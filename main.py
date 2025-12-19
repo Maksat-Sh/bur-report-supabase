@@ -16,13 +16,10 @@ engine = create_async_engine(
 
 app = FastAPI()
 
-
 @app.get("/")
 async def root():
     return {"status": "ok"}
 
-
-# ✅ ПРАВИЛЬНАЯ проверка БД (НЕ startup!)
 @app.get("/db-check")
 async def db_check():
     try:
