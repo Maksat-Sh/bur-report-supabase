@@ -2,9 +2,6 @@ import os
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -25,6 +22,7 @@ async def root():
     return {"status": "ok"}
 
 
+# ✅ ПРАВИЛЬНАЯ проверка БД (НЕ startup!)
 @app.get("/db-check")
 async def db_check():
     try:
