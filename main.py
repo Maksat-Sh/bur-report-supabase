@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
@@ -10,7 +10,7 @@ if not DATABASE_URL:
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,
+    echo=True,
     pool_pre_ping=True,
 )
 
@@ -19,10 +19,9 @@ app = FastAPI()
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": "bur_report"}
+    return {"status": "ok"}
 
 
-# ✅ ПРАВИЛЬНАЯ ПРОВЕРКА БД
 @app.get("/db-check")
 async def db_check():
     try:
