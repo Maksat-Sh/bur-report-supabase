@@ -1,161 +1,162 @@
 import os
-from fastapi import FastAPI, Request, Form, Depends, status
-from fastapi.responses import RedirectResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Request, Form, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import Column, Integer, String, Boolean, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker, DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String, Integer, text, select
+from passlib.context import CryptContext
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# ------------------ НАСТРОЙКИ ------------------
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://user:password@host/dbname?ssl=require"
+)
+
+DISPATCHER_LOGIN = os.getenv("DISPATCHER_LOGIN", "dispatcher")
+DISPATCHER_PASSWORD = os.getenv("DISPATCHER_PASSWORD", "1234")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# ------------------ APP ------------------
+
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
+# ------------------ DB ------------------
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
 
-app.add_middleware(
-    SessionMiddleware,
-    secret_key="SUPER_SECRET_KEY_123"
-)
+class Base(DeclarativeBase):
+    pass
 
-# =======================
-# MODELS
-# =======================
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)
-    password = Column(String, nullable=False)
-    is_dispatcher = Column(Boolean, default=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String, unique=True)
+    password_hash: Mapped[str] = mapped_column(String)
 
-# =======================
-# STARTUP
-# =======================
 
-@app.on_event("startup")
-async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+# ------------------ UTILS ------------------
 
-# =======================
-# HELPERS
-# =======================
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-def get_current_user(request: Request):
-    return request.session.get("user")
+
+def verify_password(password: str, hash_: str) -> bool:
+    return pwd_context.verify(password, hash_)
+
 
 def require_dispatcher(request: Request):
-    user = get_current_user(request)
-    if not user or not user.get("is_dispatcher"):
-        return RedirectResponse("/login", status_code=302)
-    return user
+    if not request.session.get("dispatcher"):
+        raise HTTPException(status_code=401)
+    return True
 
-# =======================
-# AUTH
-# =======================
+
+# ------------------ ROUTES ------------------
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    if request.session.get("dispatcher"):
+        return RedirectResponse("/dispatcher", 302)
+    return RedirectResponse("/login", 302)
+
+
+# ---------- LOGIN ----------
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+async def login_page():
+    return """
+    <h2>Вход диспетчера</h2>
+    <form method="post">
+        <input name="login" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
+        <button>Войти</button>
+    </form>
+    """
+
 
 @app.post("/login")
 async def login(
     request: Request,
-    username: str = Form(...),
+    login: str = Form(...),
     password: str = Form(...)
 ):
-    async with AsyncSessionLocal() as db:
-        q = select(User).where(User.username == username)
-        result = await db.execute(q)
-        user = result.scalar_one_or_none()
+    if login == DISPATCHER_LOGIN and password == DISPATCHER_PASSWORD:
+        request.session["dispatcher"] = True
+        return RedirectResponse("/dispatcher", 302)
 
-        if not user or user.password != password:
-            return templates.TemplateResponse(
-                "login.html",
-                {"request": request, "error": "Неверный логин или пароль"},
-                status_code=401
-            )
+    return HTMLResponse("<h3>Неверный логин или пароль</h3>", status_code=401)
 
-        request.session["user"] = {
-            "id": user.id,
-            "username": user.username,
-            "is_dispatcher": user.is_dispatcher
-        }
-
-        return RedirectResponse("/dispatcher", status_code=302)
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login", status_code=302)
+    return RedirectResponse("/login", 302)
 
-# =======================
-# DISPATCHER
-# =======================
 
-@app.get("/")
-async def root():
-    return RedirectResponse("/dispatcher", status_code=302)
+# ---------- DISPATCHER ----------
 
 @app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher_page(request: Request):
-    user = require_dispatcher(request)
-    if isinstance(user, RedirectResponse):
-        return user
+async def dispatcher_page(request: Request, _=Depends(require_dispatcher)):
+    return """
+    <h2>Панель диспетчера</h2>
 
-    return templates.TemplateResponse(
-        "dispatcher.html",
-        {"request": request, "user": user}
-    )
+    <h3>Создать пользователя буровика</h3>
+    <form method="post" action="/dispatcher/create-user">
+        <input name="username" placeholder="Логин"><br>
+        <input name="password" placeholder="Пароль"><br>
+        <button>Создать</button>
+    </form>
 
-# =======================
-# USERS MANAGEMENT
-# =======================
+    <br>
+    <a href="/logout">Выйти</a>
+    """
 
-@app.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request):
-    user = require_dispatcher(request)
-    if isinstance(user, RedirectResponse):
-        return user
 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User))
-        users = result.scalars().all()
-
-    return templates.TemplateResponse(
-        "users.html",
-        {"request": request, "users": users}
-    )
-
-@app.post("/users/create")
+@app.post("/dispatcher/create-user")
 async def create_user(
-    request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    is_dispatcher: bool = Form(False)
+    _=Depends(require_dispatcher)
 ):
-    user = require_dispatcher(request)
-    if isinstance(user, RedirectResponse):
-        return user
-
     async with AsyncSessionLocal() as db:
-        new_user = User(
+        exists = await db.scalar(select(User).where(User.username == username))
+        if exists:
+            return HTMLResponse("❌ Пользователь уже существует", 400)
+
+        user = User(
             username=username,
-            password=password,
-            is_dispatcher=is_dispatcher
+            password_hash=hash_password(password)
         )
-        db.add(new_user)
+        db.add(user)
+        await db.commit()
 
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
+    return RedirectResponse("/dispatcher", 302)
 
-    return RedirectResponse("/users", status_code=302)
+
+# ---------- DB CHECK ----------
+
+@app.get("/db-check")
+async def db_check():
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    return {"db": "ok"}
+
+
+# ---------- INIT TABLES (РУЧНО) ----------
+
+@app.get("/init-db")
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    return {"status": "tables created"}
