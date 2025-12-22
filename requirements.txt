@@ -7,4 +7,3 @@ jinja2
 passlib[bcrypt]
 python-dotenv
 itsdangerous
-psycopg2
