@@ -1,74 +1,65 @@
 import os
 import ssl
 from datetime import datetime
-
 from fastapi import FastAPI, Depends, HTTPException, Form
-from fastapi.responses import HTMLResponse
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
-    AsyncSession,
-)
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Integer, DateTime, Text, select
-from dotenv import load_dotenv
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, Integer, String, DateTime, Float, text
 
-load_dotenv()
-
+# =========================
+# ENV
+# =========================
 DATABASE_URL = os.getenv("DATABASE_URL")
+DISPATCHER_LOGIN = os.getenv("DISPATCHER_LOGIN", "dispatcher")
+DISPATCHER_PASSWORD = os.getenv("DISPATCHER_PASSWORD", "1234")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+    raise RuntimeError("DATABASE_URL not set")
 
-# 🔐 SSL для Supabase
+# =========================
+# SSL (обязательно для Supabase)
+# =========================
 ssl_context = ssl.create_default_context()
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,
     connect_args={"ssl": ssl_context},
 )
 
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+AsyncSessionLocal = sessionmaker(
+    engine, expire_on_commit=False, class_=AsyncSession
+)
 
+Base = declarative_base()
 
-class Base(DeclarativeBase):
-    pass
-
-
-# ================== MODELS ==================
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True)
-    password: Mapped[str] = mapped_column(String(100))
-    role: Mapped[str] = mapped_column(String(20))  # dispatcher / driller
-
-
+# =========================
+# MODELS
+# =========================
 class Report(Base):
     __tablename__ = "reports"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    area: Mapped[str] = mapped_column(String(100))
-    rig_number: Mapped[str] = mapped_column(String(50))
-    meters: Mapped[int] = mapped_column(Integer)
-    pogonometer: Mapped[str] = mapped_column(String(50))
-    operations: Mapped[str] = mapped_column(String(200))
-    responsible: Mapped[str] = mapped_column(String(100))
-    note: Mapped[str] = mapped_column(Text)
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    area = Column(String)
+    rig_number = Column(String)
+    meters = Column(Float)
+    pogonometer = Column(Float)
+    note = Column(String)
 
 
-# ================== APP ==================
+# =========================
+# APP
+# =========================
+app = FastAPI()
 
-app = FastAPI(title="Bur Report")
 
-
-async def get_db() -> AsyncSession:
-    async with SessionLocal() as session:
+# =========================
+# DB
+# =========================
+async def get_db():
+    async with AsyncSessionLocal() as session:
         yield session
 
 
@@ -76,87 +67,67 @@ async def get_db() -> AsyncSession:
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    print("✅ Database connected")
 
 
-# ================== ROUTES ==================
-
+# =========================
+# ROUTES
+# =========================
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def root():
     return """
     <h2>Bur Report</h2>
-    <ul>
-      <li><a href="/login">Вход диспетчера</a></li>
-      <li><a href="/reports">Сводки буровиков</a></li>
-    </ul>
+    <a href="/login">Диспетчер</a>
     """
 
 
-# ---------- LOGIN (БЕЗ ТОКЕНОВ) ----------
-
 @app.get("/login", response_class=HTMLResponse)
-async def login_form():
+async def login_page():
     return """
-    <h3>Вход диспетчера</h3>
     <form method="post">
-        <input name="username" placeholder="Логин"/><br>
-        <input name="password" type="password" placeholder="Пароль"/><br>
-        <button type="submit">Войти</button>
+        <input name="login" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
+        <button>Войти</button>
     </form>
     """
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def login(
-    username: str = Form(...),
-    password: str = Form(...),
+async def login(login: str = Form(...), password: str = Form(...)):
+    if login == DISPATCHER_LOGIN and password == DISPATCHER_PASSWORD:
+        return "<h3>Успешный вход</h3><a href='/reports'>Сводки</a>"
+    raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+
+@app.get("/reports")
+async def reports(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(text("SELECT * FROM reports ORDER BY created_at DESC"))
+    rows = result.fetchall()
+    return rows
+
+
+@app.post("/report")
+async def create_report(
+    area: str = Form(...),
+    rig_number: str = Form(...),
+    meters: float = Form(...),
+    pogonometer: float = Form(...),
+    note: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(User).where(
-            User.username == username,
-            User.password == password,
-            User.role == "dispatcher",
-        )
+    report = Report(
+        area=area,
+        rig_number=rig_number,
+        meters=meters,
+        pogonometer=pogonometer,
+        note=note,
     )
-    user = result.scalar_one_or_none()
+    db.add(report)
+    await db.commit()
+    return {"message": "Report saved"}
 
-    if not user:
-        return "<h3>Неверный логин или пароль</h3>"
-
-    return "<h3>Вы вошли как диспетчер ✅</h3><a href='/reports'>Смотреть сводки</a>"
-
-
-# ---------- REPORTS ----------
-
-@app.get("/reports", response_class=HTMLResponse)
-async def reports(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Report).order_by(Report.created_at.desc()))
-    rows = result.scalars().all()
-
-    html = "<h2>Сводки буровиков</h2><table border=1>"
-    html += "<tr><th>Дата</th><th>Участок</th><th>Буровая</th><th>Метраж</th><th>Погонометр</th></tr>"
-
-    for r in rows:
-        html += f"""
-        <tr>
-            <td>{r.created_at}</td>
-            <td>{r.area}</td>
-            <td>{r.rig_number}</td>
-            <td>{r.meters}</td>
-            <td>{r.pogonometer}</td>
-        </tr>
-        """
-
-    html += "</table>"
-    return html
-
-
-# ---------- DB CHECK ----------
 
 @app.get("/db-check")
 async def db_check(db: AsyncSession = Depends(get_db)):
-    try:
-        await db.execute(select(1))
-        return {"db": "ok"}
-    except Exception as e:
-        return {"db": "error", "detail": str(e)}
+    await db.execute(text("SELECT 1"))
+    return {"db": "ok"}
