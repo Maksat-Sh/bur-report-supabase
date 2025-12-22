@@ -1,19 +1,21 @@
 import os
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Request, Form, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-from starlette.middleware.sessions import SessionMiddleware
+from starlette.status import HTTP_302_FOUND
+from fastapi.templating import Jinja2Templates
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-SECRET_KEY = os.getenv("SECRET_KEY", "secret")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"ssl": "require"}  # ← ВАЖНО
+    pool_pre_ping=True,
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -21,68 +23,79 @@ AsyncSessionLocal = sessionmaker(
 )
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
+# Статика и шаблоны
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-# ---------- DB CHECK ----------
+# ---------- DB ----------
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
 @app.get("/db-check")
-async def db_check():
-    try:
-        async with engine.connect() as conn:
-            result = await conn.execute(text("SELECT 1"))
-            return {"db": "ok", "result": result.scalar()}
-    except Exception as e:
-        return {"db": "error", "detail": str(e)}
+async def db_check(db: AsyncSession = Depends(get_db)):
+    await db.execute(text("SELECT 1"))
+    return {"db": "ok"}
 
 
 # ---------- LOGIN ----------
+@app.get("/", response_class=HTMLResponse)
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+        "login.html", {"request": request}
+    )
 
 
 @app.post("/login")
 async def login(
     request: Request,
     username: str = Form(...),
-    password: str = Form(...)
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    # ПРОСТОЙ диспетчер (без токенов)
-    if username == "dispatcher" and password == "1234":
-        request.session["dispatcher"] = True
-        return RedirectResponse("/dispatcher", status_code=302)
+    query = text("""
+        SELECT role FROM users
+        WHERE username = :u AND password = :p
+    """)
+    result = await db.execute(query, {"u": username, "p": password})
+    user = result.fetchone()
 
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request, "error": "Неверный логин или пароль"}
-    )
+    if not user:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный логин или пароль"},
+            status_code=400
+        )
+
+    role = user[0]
+
+    if role == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=HTTP_302_FOUND)
+    else:
+        return RedirectResponse("/report", status_code=HTTP_302_FOUND)
 
 
 # ---------- DISPATCHER ----------
 @app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    if not request.session.get("dispatcher"):
-        return RedirectResponse("/login", status_code=302)
-
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            text("""
-                SELECT id, date_time, rig_number, meters, note
-                FROM reports
-                ORDER BY date_time DESC
-            """)
-        )
-        reports = result.fetchall()
+async def dispatcher(request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(text("""
+        SELECT id, rig_number, meters, created_at
+        FROM reports
+        ORDER BY created_at DESC
+    """))
+    reports = result.fetchall()
 
     return templates.TemplateResponse(
         "dispatcher.html",
-        {"request": request, "reports": reports}
+        {"request": request, "reports": reports},
     )
 
 
-# ---------- ROOT ----------
-@app.get("/")
-async def root():
-    return RedirectResponse("/login")
+# ---------- REPORT (буровик) ----------
+@app.get("/report", response_class=HTMLResponse)
+async def report_form():
+    return HTMLResponse("<h2>Форма буровика (добавим позже)</h2>")
