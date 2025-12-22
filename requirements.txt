@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-sqlalchemy
+sqlalchemy>=2.0
 asyncpg
 python-multipart
 jinja2
