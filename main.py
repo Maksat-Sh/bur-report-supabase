@@ -1,16 +1,19 @@
 import os
-from fastapi import FastAPI, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
+from starlette.middleware.sessions import SessionMiddleware
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY", "secret")
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"ssl": "require"}  # ВАЖНО для Supabase
+    connect_args={"ssl": "require"}  # ← ВАЖНО
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -18,69 +21,68 @@ AsyncSessionLocal = sessionmaker(
 )
 
 app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-# ---------- DB SESSION ----------
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
+templates = Jinja2Templates(directory="templates")
+
 
 # ---------- DB CHECK ----------
 @app.get("/db-check")
-async def db_check(db: AsyncSession = Depends(get_db)):
+async def db_check():
     try:
-        await db.execute(text("SELECT 1"))
-        return {"db": "ok"}
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT 1"))
+            return {"db": "ok", "result": result.scalar()}
     except Exception as e:
         return {"db": "error", "detail": str(e)}
 
+
 # ---------- LOGIN ----------
 @app.get("/login", response_class=HTMLResponse)
-async def login_page():
-    return """
-    <form method="post">
-        <input name="login" placeholder="Логин"><br>
-        <input name="password" type="password" placeholder="Пароль"><br>
-        <button type="submit">Войти</button>
-    </form>
-    """
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
 
 @app.post("/login")
 async def login(
-    login: str = Form(...),
+    request: Request,
+    username: str = Form(...),
     password: str = Form(...)
 ):
-    # ПРОСТАЯ логика, без токенов
-    if login == "dispatcher" and password == "1234":
-        response = RedirectResponse("/dispatcher", status_code=302)
-        response.set_cookie("auth", "yes")
-        return response
-    raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    # ПРОСТОЙ диспетчер (без токенов)
+    if username == "dispatcher" and password == "1234":
+        request.session["dispatcher"] = True
+        return RedirectResponse("/dispatcher", status_code=302)
 
-def dispatcher_only(request: Request):
-    if request.cookies.get("auth") != "yes":
-        raise HTTPException(status_code=403, detail="Нет доступа")
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Неверный логин или пароль"}
+    )
+
 
 # ---------- DISPATCHER ----------
 @app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    dispatcher_only(request)
+async def dispatcher(request: Request):
+    if not request.session.get("dispatcher"):
+        return RedirectResponse("/login", status_code=302)
 
-    result = await db.execute(
-        text("SELECT id, date_time, rig_number, meters, note FROM reports ORDER BY date_time DESC")
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            text("""
+                SELECT id, date_time, rig_number, meters, note
+                FROM reports
+                ORDER BY date_time DESC
+            """)
+        )
+        reports = result.fetchall()
+
+    return templates.TemplateResponse(
+        "dispatcher.html",
+        {"request": request, "reports": reports}
     )
-    rows = result.fetchall()
 
-    html = "<h2>Сводки буровиков</h2><table border=1>"
-    for r in rows:
-        html += f"<tr><td>{r.id}</td><td>{r.date_time}</td><td>{r.rig_number}</td><td>{r.meters}</td><td>{r.note}</td></tr>"
-    html += "</table>"
-
-    return html
 
 # ---------- ROOT ----------
 @app.get("/")
 async def root():
-    return {"status": "ok"}
+    return RedirectResponse("/login")
