@@ -1,25 +1,28 @@
+import os
 from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key="super-secret-key")
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 async def get_db():
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         yield session
 
 
@@ -39,60 +42,109 @@ async def login(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    query = text("""
+    q = text("""
         SELECT role FROM users
-        WHERE username = :u AND password = :p
+        WHERE username=:u AND password=:p
     """)
-    result = await db.execute(query, {"u": username, "p": password})
-    user = result.fetchone()
+    res = await db.execute(q, {"u": username, "p": password})
+    row = res.fetchone()
 
-    if not user:
+    if not row:
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Неверный логин или пароль"}
+            {"request": request, "error": "Неверный логин или пароль"},
         )
 
-    if user.role == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-    else:
-        return RedirectResponse("/driller", status_code=302)
+    request.session["user"] = username
+    request.session["role"] = row[0]
+
+    return RedirectResponse(
+        "/dispatcher" if row[0] == "dispatcher" else "/driller",
+        status_code=302,
+    )
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
 
 
 # ---------- DISPATCHER ----------
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        text("SELECT id, date_time, rig_number, meters, note FROM reports ORDER BY date_time DESC")
-    )
-    reports = result.fetchall()
+    if request.session.get("role") != "dispatcher":
+        return RedirectResponse("/login")
+
+    res = await db.execute(text("SELECT * FROM reports ORDER BY created_at DESC"))
+    reports = res.fetchall()
 
     return templates.TemplateResponse(
         "dispatcher.html",
-        {"request": request, "reports": reports}
+        {"request": request, "reports": reports},
     )
+
+
+@app.post("/create-user")
+async def create_user(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    if request.session.get("role") != "dispatcher":
+        return RedirectResponse("/login")
+
+    await db.execute(
+        text("""
+            INSERT INTO users (username, password, role)
+            VALUES (:u, :p, :r)
+        """),
+        {"u": username, "p": password, "r": role},
+    )
+    await db.commit()
+    return RedirectResponse("/dispatcher", status_code=302)
 
 
 # ---------- DRILLER ----------
 @app.get("/driller", response_class=HTMLResponse)
-async def driller_page(request: Request):
+async def driller(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login")
+
     return templates.TemplateResponse("driller.html", {"request": request})
 
 
-@app.post("/driller")
+@app.post("/submit-report")
 async def submit_report(
-    rig_number: str = Form(...),
+    request: Request,
+    site: str = Form(...),
+    rig: str = Form(...),
     meters: int = Form(...),
+    pogonometr: int = Form(...),
     note: str = Form(""),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
+    if not request.session.get("user"):
+        return RedirectResponse("/login")
+
     await db.execute(
         text("""
-            INSERT INTO reports (date_time, rig_number, meters, note)
-            VALUES (NOW(), :rig, :meters, :note)
+            INSERT INTO reports
+            (username, site, rig, meters, pogonometr, note)
+            VALUES (:u, :s, :r, :m, :p, :n)
         """),
-        {"rig": rig_number, "meters": meters, "note": note}
+        {
+            "u": request.session["user"],
+            "s": site,
+            "r": rig,
+            "m": meters,
+            "p": pogonometr,
+            "n": note,
+        },
     )
     await db.commit()
     return RedirectResponse("/driller", status_code=302)
@@ -102,4 +154,4 @@ async def submit_report(
 @app.get("/db-check")
 async def db_check(db: AsyncSession = Depends(get_db)):
     await db.execute(text("SELECT 1"))
-    return {"status": "ok"}
+    return {"db": "ok"}
