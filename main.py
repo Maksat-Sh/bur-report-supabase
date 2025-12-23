@@ -1,59 +1,46 @@
 import os
 from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
-    AsyncSession
-)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 
-# ======================
-# CONFIG
-# ======================
 DATABASE_URL = os.getenv("DATABASE_URL")
-DISPATCHER_LOGIN = os.getenv("DISPATCHER_LOGIN", "dispatcher")
-DISPATCHER_PASSWORD = os.getenv("DISPATCHER_PASSWORD", "1234")
 
-# ======================
-# DB
-# ======================
 engine = create_async_engine(
     DATABASE_URL,
+    echo=True,
     pool_pre_ping=True,
+    connect_args={"ssl": "require"},  # ← ВАЖНО для Supabase
 )
 
-SessionLocal = async_sessionmaker(
-    engine,
-    expire_on_commit=False
+AsyncSessionLocal = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
 )
 
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
-
-# ======================
-# APP
-# ======================
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# ======================
-# ROUTES
-# ======================
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/login")
 
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request}
-    )
+    return templates.TemplateResponse("login.html", {"request": request})
+
 
 @app.post("/login")
 async def login(
@@ -62,20 +49,39 @@ async def login(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    # Проверка подключения к БД (важно!)
+    # Проверка подключения
     await db.execute(text("select 1"))
 
-    if username == DISPATCHER_LOGIN and password == DISPATCHER_PASSWORD:
+    query = text("""
+        SELECT role FROM users
+        WHERE username = :u AND password = :p
+    """)
+    result = await db.execute(query, {"u": username, "p": password})
+    user = result.first()
+
+    if not user:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный логин или пароль"},
+        )
+
+    if user.role == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
+
+    if user.role == "driller":
+        return RedirectResponse("/driller", status_code=302)
 
     return templates.TemplateResponse(
         "login.html",
-        {
-            "request": request,
-            "error": "Неверный логин или пароль"
-        }
+        {"request": request, "error": "Неизвестная роль"},
     )
 
+
 @app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    return HTMLResponse("<h1>Диспетчерская работает ✅</h1>")
+async def dispatcher():
+    return HTMLResponse("<h1>Диспетчер</h1>")
+
+
+@app.get("/driller", response_class=HTMLResponse)
+async def driller():
+    return HTMLResponse("<h1>Буровик</h1>")
