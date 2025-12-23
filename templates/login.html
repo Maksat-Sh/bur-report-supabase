@@ -1,20 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Вход</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <title>Вход диспетчера</title>
 </head>
 <body>
-<h2>Вход</h2>
+    <h2>Вход диспетчера</h2>
 
-<form method="post">
-    <input name="username" placeholder="Логин" required>
-    <input name="password" type="password" placeholder="Пароль" required>
-    <button type="submit">Войти</button>
-</form>
+    {% if error %}
+        <p style="color:red">{{ error }}</p>
+    {% endif %}
 
-{% if error %}
-<p style="color:red">{{ error }}</p>
-{% endif %}
+    <form method="post">
+        <input name="username" placeholder="Логин" required><br><br>
+        <input name="password" type="password" placeholder="Пароль" required><br><br>
+        <button type="submit">Войти</button>
+    </form>
 </body>
 </html>
