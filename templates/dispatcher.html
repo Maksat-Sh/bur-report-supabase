@@ -1,27 +1,26 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
     <title>Диспетчер</title>
 </head>
 <body>
-<h2>Сводки буровиков</h2>
+<h2>Сводки</h2>
 
 <table border="1">
-    <tr>
-        <th>ID</th>
-        <th>Буровая</th>
-        <th>Метраж</th>
-        <th>Дата</th>
-    </tr>
-    {% for r in reports %}
-    <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.rig_number }}</td>
-        <td>{{ r.meters }}</td>
-        <td>{{ r.created_at }}</td>
-    </tr>
-    {% endfor %}
+<tr>
+    <th>Дата</th>
+    <th>Буровая</th>
+    <th>Метраж</th>
+    <th>Примечание</th>
+</tr>
+{% for r in reports %}
+<tr>
+    <td>{{ r.date_time }}</td>
+    <td>{{ r.rig_number }}</td>
+    <td>{{ r.meters }}</td>
+    <td>{{ r.note }}</td>
+</tr>
+{% endfor %}
 </table>
 </body>
 </html>
