@@ -1,26 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
+    <meta charset="UTF-8">
     <title>Диспетчер</title>
 </head>
 <body>
-<h2>Сводки</h2>
+<h1>Панель диспетчера</h1>
 
-<table border="1">
-<tr>
-    <th>Дата</th>
-    <th>Буровая</th>
-    <th>Метраж</th>
-    <th>Примечание</th>
-</tr>
-{% for r in reports %}
-<tr>
-    <td>{{ r.date_time }}</td>
-    <td>{{ r.rig_number }}</td>
-    <td>{{ r.meters }}</td>
-    <td>{{ r.note }}</td>
-</tr>
-{% endfor %}
-</table>
+<p>Добро пожаловать</p>
+
+<a href="/logout">Выйти</a>
 </body>
 </html>
