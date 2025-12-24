@@ -2,33 +2,44 @@ import os
 import asyncpg
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "secret")
-
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"])
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
 app = FastAPI()
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key=SESSION_SECRET,
+    secret_key=SECRET_KEY,
     same_site="lax",
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# ❗ ТОЛЬКО pbkdf2, без bcrypt
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto"
+)
 
 
-# ---------- STARTUP / SHUTDOWN ----------
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
 
 @app.on_event("startup")
 async def startup():
+    # 🔑 ВАЖНО: маленький пул для Supabase
     app.state.pool = await asyncpg.create_pool(
-        dsn=DATABASE_URL,
-        ssl="require",
+        DATABASE_URL,
+        min_size=1,
+        max_size=3
     )
 
 
@@ -37,49 +48,16 @@ async def shutdown():
     await app.state.pool.close()
 
 
-# ---------- HELPERS ----------
-
-def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(password, hashed)
-
-
-async def get_user(username: str):
-    async with app.state.pool.acquire() as conn:
-        return await conn.fetchrow(
-            "SELECT * FROM users WHERE username=$1",
-            username
-        )
-
-
-def require_login(request: Request):
-    if not request.session.get("user"):
-        return RedirectResponse("/login", status_code=302)
-
-
-# ---------- ROUTES ----------
-
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    if not request.session.get("user"):
-        return RedirectResponse("/login")
-    return RedirectResponse("/dispatcher")
+    if request.session.get("user"):
+        return RedirectResponse("/dispatcher", status_code=302)
+    return RedirectResponse("/login", status_code=302)
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page():
-    return """
-    <html>
-    <head><title>Login</title></head>
-    <body>
-        <h2>Вход</h2>
-        <form method="post">
-            <input name="username" placeholder="Логин"><br>
-            <input name="password" type="password" placeholder="Пароль"><br><br>
-            <button type="submit">Войти</button>
-        </form>
-    </body>
-    </html>
-    """
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.post("/login")
@@ -88,58 +66,45 @@ async def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    user = await get_user(username)
+    async with app.state.pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "SELECT username, password_hash FROM users WHERE username=$1",
+            username
+        )
 
     if not user:
-        return HTMLResponse("❌ Пользователь не найден", status_code=401)
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный логин или пароль"},
+            status_code=401
+        )
 
     if not verify_password(password, user["password_hash"]):
-        return HTMLResponse("❌ Неверный пароль", status_code=401)
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный логин или пароль"},
+            status_code=401
+        )
 
-    request.session["user"] = {
-        "username": user["username"],
-        "role": user["role"],
-    }
+    request.session["user"] = user["username"]
+    return RedirectResponse("/dispatcher", status_code=302)
 
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-    else:
-        return RedirectResponse("/driller", status_code=302)
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
+
+    return templates.TemplateResponse(
+        "dispatcher.html",
+        {"request": request}
+    )
 
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
-
-
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    auth = require_login(request)
-    if auth:
-        return auth
-
-    if request.session["user"]["role"] != "dispatcher":
-        return HTMLResponse("⛔ Доступ запрещён", status_code=403)
-
-    return """
-    <h1>Панель диспетчера</h1>
-    <p>Вы успешно вошли</p>
-    <a href="/logout">Выйти</a>
-    """
-
-
-@app.get("/driller", response_class=HTMLResponse)
-async def driller(request: Request):
-    auth = require_login(request)
-    if auth:
-        return auth
-
-    return """
-    <h1>Форма буровика</h1>
-    <p>Доступ разрешён</p>
-    <a href="/logout">Выйти</a>
-    """
+    return RedirectResponse("/login", status_code=302)
 
 
 @app.get("/db-check")
