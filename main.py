@@ -5,61 +5,82 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
-
-app = FastAPI()
-
-# ===== Middleware =====
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
-
-# ===== Static =====
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# ===== Password hashing (БЕЗ bcrypt) =====
-from passlib.context import CryptContext
+SESSION_SECRET = os.getenv("SESSION_SECRET", "secret")
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"])
 
-def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(password, hashed)
+app = FastAPI()
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    same_site="lax",
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# ===== DB =====
+# ---------- STARTUP / SHUTDOWN ----------
+
 @app.on_event("startup")
 async def startup():
     app.state.pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        ssl="require"
+        dsn=DATABASE_URL,
+        ssl="require",
     )
+
 
 @app.on_event("shutdown")
 async def shutdown():
     await app.state.pool.close()
 
-# ===== Utils =====
+
+# ---------- HELPERS ----------
+
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+
 async def get_user(username: str):
     async with app.state.pool.acquire() as conn:
         return await conn.fetchrow(
-            "SELECT username, password_hash, role FROM users WHERE username=$1",
+            "SELECT * FROM users WHERE username=$1",
             username
         )
 
-# ===== Routes =====
+
+def require_login(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
+
+
+# ---------- ROUTES ----------
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    if request.session.get("user"):
-        return RedirectResponse("/dispatcher", status_code=302)
-    return RedirectResponse("/login", status_code=302)
+    if not request.session.get("user"):
+        return RedirectResponse("/login")
+    return RedirectResponse("/dispatcher")
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
-    with open("templates/login.html", encoding="utf-8") as f:
-        return f.read()
+    return """
+    <html>
+    <head><title>Login</title></head>
+    <body>
+        <h2>Вход</h2>
+        <form method="post">
+            <input name="username" placeholder="Логин"><br>
+            <input name="password" type="password" placeholder="Пароль"><br><br>
+            <button type="submit">Войти</button>
+        </form>
+    </body>
+    </html>
+    """
+
 
 @app.post("/login")
 async def login(
@@ -77,26 +98,49 @@ async def login(
 
     request.session["user"] = {
         "username": user["username"],
-        "role": user["role"]
+        "role": user["role"],
     }
 
-    return RedirectResponse("/dispatcher", status_code=302)
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+    else:
+        return RedirectResponse("/driller", status_code=302)
 
-@app.get("/dispatcher", response_class=HTMLResponse)
-async def dispatcher(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-
-    with open("templates/dispatcher.html", encoding="utf-8") as f:
-        html = f.read()
-
-    return html.replace("{{username}}", user["username"])
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login", status_code=302)
+    return RedirectResponse("/login")
+
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher(request: Request):
+    auth = require_login(request)
+    if auth:
+        return auth
+
+    if request.session["user"]["role"] != "dispatcher":
+        return HTMLResponse("⛔ Доступ запрещён", status_code=403)
+
+    return """
+    <h1>Панель диспетчера</h1>
+    <p>Вы успешно вошли</p>
+    <a href="/logout">Выйти</a>
+    """
+
+
+@app.get("/driller", response_class=HTMLResponse)
+async def driller(request: Request):
+    auth = require_login(request)
+    if auth:
+        return auth
+
+    return """
+    <h1>Форма буровика</h1>
+    <p>Доступ разрешён</p>
+    <a href="/logout">Выйти</a>
+    """
+
 
 @app.get("/db-check")
 async def db_check():
