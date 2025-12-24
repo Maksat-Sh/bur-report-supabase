@@ -89,7 +89,11 @@ async def dispatcher(request: Request):
     if request.session.get("role") != "dispatcher":
         return RedirectResponse("/login", status_code=302)
 
-    return "<h1>Диспетчерская</h1><a href='/logout'>Выйти</a>"
+    return """
+    <h1>Диспетчерская</h1>
+    <p>Вы вошли как диспетчер</p>
+    <a href="/logout">Выйти</a>
+    """
 
 
 @app.get("/logout")
