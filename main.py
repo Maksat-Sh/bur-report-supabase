@@ -1,13 +1,9 @@
 import os
 import asyncpg
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
@@ -20,39 +16,47 @@ pwd_context = CryptContext(
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+pool: asyncpg.Pool | None = None
 
 
-# ---------- DB ----------
-async def get_conn():
-    return await asyncpg.connect(DATABASE_URL)
+@app.on_event("startup")
+async def startup():
+    global pool
+    pool = await asyncpg.create_pool(DATABASE_URL)
 
 
-# ---------- UTILS ----------
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+@app.on_event("shutdown")
+async def shutdown():
+    await pool.close()
 
 
-# ---------- ROUTES ----------
-@app.get("/", response_class=RedirectResponse)
-async def root():
-    return RedirectResponse("/login")
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+
+@app.get("/db-check")
+async def db_check():
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT 1")
+    return {"status": "ok"}
+
+
+@app.get("/")
+async def root(request: Request):
+    if request.session.get("user"):
+        return RedirectResponse("/dispatcher", status_code=302)
+    return RedirectResponse("/login", status_code=302)
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page():
+async def login_form():
     return """
-    <html>
-    <head><title>Login</title></head>
-    <body>
-        <h2>Вход</h2>
-        <form method="post">
-            <input name="username" placeholder="Логин" required><br>
-            <input name="password" type="password" placeholder="Пароль" required><br>
-            <button type="submit">Войти</button>
-        </form>
-    </body>
-    </html>
+    <h2>Вход</h2>
+    <form method="post">
+        <input name="username" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
+        <button>Войти</button>
+    </form>
     """
 
 
@@ -62,58 +66,33 @@ async def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    conn = await get_conn()
-    try:
+    async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, username, password_hash, role FROM users WHERE username=$1",
+            "SELECT username, password_hash, role FROM users WHERE username=$1",
             username
         )
-    finally:
-        await conn.close()
 
     if not user:
-        return HTMLResponse("Неверный логин", status_code=401)
+        return RedirectResponse("/login", status_code=302)
 
     if not verify_password(password, user["password_hash"]):
-        return HTMLResponse("Неверный пароль", status_code=401)
+        return RedirectResponse("/login", status_code=302)
 
-    request.session["user_id"] = user["id"]
+    request.session["user"] = user["username"]
     request.session["role"] = user["role"]
 
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/dispatcher", status_code=302)
-    else:
-        return RedirectResponse("/driller", status_code=302)
+    return RedirectResponse("/dispatcher", status_code=302)
 
 
-@app.get("/dispatcher")
+@app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login")
+        return RedirectResponse("/login", status_code=302)
 
-    return HTMLResponse("<h1>Панель диспетчера</h1>")
-
-
-@app.get("/driller")
-async def driller(request: Request):
-    if request.session.get("role") != "driller":
-        return RedirectResponse("/login")
-
-    return HTMLResponse("<h1>Форма буровика</h1>")
+    return "<h1>Диспетчерская</h1><a href='/logout'>Выйти</a>"
 
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
-
-
-@app.get("/db-check")
-async def db_check():
-    try:
-        conn = await get_conn()
-        await conn.execute("SELECT 1")
-        await conn.close()
-        return {"status": "ok"}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    return RedirectResponse("/login", status_code=302)
