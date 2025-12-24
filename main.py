@@ -1,146 +1,131 @@
 import os
-import ssl
-
-from fastapi import FastAPI, Request, Form, Depends
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    create_async_engine,
-)
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import text
-
 from passlib.context import CryptContext
 from dotenv import load_dotenv
 
-# ========================
-# ENV
-# ========================
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
-# ========================
-# SSL for Supabase Pooler
-# ========================
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
-
-# ========================
-# DATABASE
-# ========================
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    connect_args={
-        "ssl": ssl_context
-    }
-)
-
-AsyncSessionLocal = sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
-
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
-
-# ========================
-# SECURITY
-# ========================
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-# ========================
-# APP
-# ========================
-app = FastAPI()
-
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SECRET_KEY,
-    same_site="lax"
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
 )
+
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ========================
-# AUTH HELPERS
-# ========================
-def require_login(request: Request):
-    if not request.session.get("user"):
-        return RedirectResponse("/login", status_code=302)
 
-# ========================
-# ROUTES
-# ========================
+# ---------- HELPERS ----------
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+
+def require_login(request: Request, role: str | None = None):
+    user = request.session.get("user")
+    if not user:
+        return None
+    if role and user["role"] != role:
+        return None
+    return user
+
+
+# ---------- ROUTES ----------
+
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    if not request.session.get("user"):
+async def root(request: Request):
+    user = request.session.get("user")
+    if not user:
         return RedirectResponse("/login", status_code=302)
 
-    return HTMLResponse("""
-    <h2>Диспетчер</h2>
-    <p>Вы вошли в систему</p>
-    <a href="/logout">Выйти</a>
-    """)
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+    return RedirectResponse("/driller", status_code=302)
 
-# ------------------------
-# LOGIN
-# ------------------------
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
-    return HTMLResponse(open("templates/login.html", encoding="utf-8").read())
+    with open("templates/login.html", encoding="utf-8") as f:
+        return f.read()
+
 
 @app.post("/login")
 async def login(
     request: Request,
     username: str = Form(...),
-    password: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    password: str = Form(...)
 ):
-    q = text("""
-        SELECT username, password_hash, role
-        FROM users
-        WHERE username = :u
-    """)
-    result = await db.execute(q, {"u": username})
-    user = result.mappings().first()
+    async with SessionLocal() as db:
+        q = text("""
+            SELECT id, username, password_hash, role
+            FROM users
+            WHERE username = :u
+        """)
+        res = await db.execute(q, {"u": username})
+        user = res.mappings().first()
 
     if not user or not verify_password(password, user["password_hash"]):
-        return HTMLResponse(
-            "<h3>Неверный логин или пароль</h3><a href='/login'>Назад</a>",
-            status_code=401
-        )
+        return HTMLResponse("Неверный логин или пароль", status_code=401)
 
     request.session["user"] = {
+        "id": user["id"],
         "username": user["username"],
         "role": user["role"]
     }
 
-    return RedirectResponse("/", status_code=302)
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
 
-# ------------------------
-# LOGOUT
-# ------------------------
+    return RedirectResponse("/driller", status_code=302)
+
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# ------------------------
-# DB CHECK
-# ------------------------
+
+@app.get("/dispatcher", response_class=HTMLResponse)
+async def dispatcher_page(request: Request):
+    user = require_login(request, "dispatcher")
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    with open("templates/dispatcher.html", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/driller", response_class=HTMLResponse)
+async def driller_page(request: Request):
+    user = require_login(request, "driller")
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    with open("templates/driller.html", encoding="utf-8") as f:
+        return f.read()
+
+
 @app.get("/db-check")
-async def db_check(db: AsyncSession = Depends(get_db)):
-    await db.execute(text("SELECT 1"))
+async def db_check():
+    async with SessionLocal() as db:
+        await db.execute(text("SELECT 1"))
     return {"status": "ok"}
