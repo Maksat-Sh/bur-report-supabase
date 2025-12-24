@@ -22,12 +22,17 @@ pool: asyncpg.Pool | None = None
 @app.on_event("startup")
 async def startup():
     global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
+    pool = await asyncpg.create_pool(
+        DATABASE_URL,
+        min_size=1,
+        max_size=2   # 🔴 КРИТИЧНО для Supabase Free
+    )
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    await pool.close()
+    if pool:
+        await pool.close()
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -53,9 +58,9 @@ async def login_form():
     return """
     <h2>Вход</h2>
     <form method="post">
-        <input name="username" placeholder="Логин"><br>
-        <input name="password" type="password" placeholder="Пароль"><br>
-        <button>Войти</button>
+        <input name="username" placeholder="Логин" required><br>
+        <input name="password" type="password" placeholder="Пароль" required><br>
+        <button type="submit">Войти</button>
     </form>
     """
 
@@ -91,7 +96,7 @@ async def dispatcher(request: Request):
 
     return """
     <h1>Диспетчерская</h1>
-    <p>Вы вошли как диспетчер</p>
+    <p>Вы успешно вошли</p>
     <a href="/logout">Выйти</a>
     """
 
