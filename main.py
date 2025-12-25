@@ -5,8 +5,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
+DATABASE_URL = os.getenv("DATABASE_URL")  # pooler URL !!!
+SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
 pwd_context = CryptContext(
     schemes=["pbkdf2_sha256"],
@@ -25,7 +25,8 @@ async def startup():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=2   # 🔴 КРИТИЧНО для Supabase Free
+        max_size=2,   # 🔴 КРИТИЧНО для Supabase Free
+        command_timeout=30
     )
 
 
@@ -58,9 +59,9 @@ async def login_form():
     return """
     <h2>Вход</h2>
     <form method="post">
-        <input name="username" placeholder="Логин" required><br>
-        <input name="password" type="password" placeholder="Пароль" required><br>
-        <button type="submit">Войти</button>
+        <input name="username" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
+        <button>Войти</button>
     </form>
     """
 
@@ -73,14 +74,23 @@ async def login(
 ):
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT username, password_hash, role FROM users WHERE username=$1",
+            """
+            SELECT username, password_hash, role
+            FROM users
+            WHERE username = $1
+            """,
             username
         )
 
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    if not verify_password(password, user["password_hash"]):
+    try:
+        ok = verify_password(password, user["password_hash"])
+    except Exception:
+        return RedirectResponse("/login", status_code=302)
+
+    if not ok:
         return RedirectResponse("/login", status_code=302)
 
     request.session["user"] = user["username"]
@@ -96,7 +106,7 @@ async def dispatcher(request: Request):
 
     return """
     <h1>Диспетчерская</h1>
-    <p>Вы успешно вошли</p>
+    <p>Вы вошли как диспетчер</p>
     <a href="/logout">Выйти</a>
     """
 
