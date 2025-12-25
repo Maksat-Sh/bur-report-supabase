@@ -23,11 +23,10 @@ pool: asyncpg.Pool | None = None
 async def startup():
     global pool
     pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        min_size=1,
-        max_size=2,   # 🔴 КРИТИЧНО для Supabase Free
-        command_timeout=30
-    )
+    DATABASE_URL,
+    min_size=1,
+    max_size=3
+)
 
 
 @app.on_event("shutdown")
