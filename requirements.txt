@@ -4,6 +4,5 @@ sqlalchemy>=2.0
 asyncpg
 python-multipart
 jinja2
-passlib[bcrypt]
 python-dotenv
 itsdangerous
