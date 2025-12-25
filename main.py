@@ -5,11 +5,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
 
-DATABASE_URL = os.getenv("DATABASE_URL")  # pooler URL !!!
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
+DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    schemes=["pbkdf2_sha256"],
     deprecated="auto"
 )
 
@@ -23,10 +23,10 @@ pool: asyncpg.Pool | None = None
 async def startup():
     global pool
     pool = await asyncpg.create_pool(
-    DATABASE_URL,
-    min_size=1,
-    max_size=3
-)
+        DATABASE_URL,
+        min_size=1,
+        max_size=3   # 🔴 ВАЖНО для Supabase Free
+    )
 
 
 @app.on_event("shutdown")
@@ -48,7 +48,7 @@ async def db_check():
 
 @app.get("/")
 async def root(request: Request):
-    if request.session.get("user"):
+    if request.session.get("role") == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     return RedirectResponse("/login", status_code=302)
 
@@ -58,8 +58,8 @@ async def login_form():
     return """
     <h2>Вход</h2>
     <form method="post">
-        <input name="username" placeholder="Логин"><br>
-        <input name="password" type="password" placeholder="Пароль"><br>
+        <input name="username" placeholder="Логин" required><br>
+        <input name="password" type="password" placeholder="Пароль" required><br>
         <button>Войти</button>
     </form>
     """
@@ -73,26 +73,17 @@ async def login(
 ):
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            """
-            SELECT username, password_hash, role
-            FROM users
-            WHERE username = $1
-            """,
+            "SELECT username, password_hash, role FROM users WHERE username=$1",
             username
         )
 
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    try:
-        ok = verify_password(password, user["password_hash"])
-    except Exception:
+    if not verify_password(password, user["password_hash"]):
         return RedirectResponse("/login", status_code=302)
 
-    if not ok:
-        return RedirectResponse("/login", status_code=302)
-
-    request.session["user"] = user["username"]
+    request.session["username"] = user["username"]
     request.session["role"] = user["role"]
 
     return RedirectResponse("/dispatcher", status_code=302)
