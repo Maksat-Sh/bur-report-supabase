@@ -25,7 +25,7 @@ async def startup():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=3   # 🔴 ВАЖНО для Supabase Free
+        max_size=3   # ⚠️ ВАЖНО для Supabase Free
     )
 
 
@@ -39,16 +39,9 @@ def verify_password(password: str, hashed: str) -> bool:
     return pwd_context.verify(password, hashed)
 
 
-@app.get("/db-check")
-async def db_check():
-    async with pool.acquire() as conn:
-        await conn.execute("SELECT 1")
-    return {"status": "ok"}
-
-
 @app.get("/")
 async def root(request: Request):
-    if request.session.get("role") == "dispatcher":
+    if request.session.get("user"):
         return RedirectResponse("/dispatcher", status_code=302)
     return RedirectResponse("/login", status_code=302)
 
@@ -58,8 +51,8 @@ async def login_form():
     return """
     <h2>Вход</h2>
     <form method="post">
-        <input name="username" placeholder="Логин" required><br>
-        <input name="password" type="password" placeholder="Пароль" required><br>
+        <input name="username" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
         <button>Войти</button>
     </form>
     """
@@ -83,7 +76,7 @@ async def login(
     if not verify_password(password, user["password_hash"]):
         return RedirectResponse("/login", status_code=302)
 
-    request.session["username"] = user["username"]
+    request.session["user"] = user["username"]
     request.session["role"] = user["role"]
 
     return RedirectResponse("/dispatcher", status_code=302)
@@ -94,11 +87,7 @@ async def dispatcher(request: Request):
     if request.session.get("role") != "dispatcher":
         return RedirectResponse("/login", status_code=302)
 
-    return """
-    <h1>Диспетчерская</h1>
-    <p>Вы вошли как диспетчер</p>
-    <a href="/logout">Выйти</a>
-    """
+    return "<h1>Диспетчерская</h1><a href='/logout'>Выйти</a>"
 
 
 @app.get("/logout")
