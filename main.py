@@ -9,7 +9,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # pooler URL !!!
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
 pwd_context = CryptContext(
-    schemes=["pbkdf2_sha256"],
+    schemes=["bcrypt"],
     deprecated="auto"
 )
 
