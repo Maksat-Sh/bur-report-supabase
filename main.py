@@ -1,26 +1,30 @@
 import os
+import hashlib
+import hmac
+import binascii
 import asyncpg
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
-from passlib.context import CryptContext
 
-# ================== CONFIG ==================
+# ================== НАСТРОЙКИ ==================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
-pwd_context = CryptContext(
-    schemes=["pbkdf2_sha256"],
-    deprecated="auto"
-)
+ITERATIONS = 29000
+ALGORITHM = "sha256"
+
+# ================== APP ==================
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 pool: asyncpg.Pool | None = None
 
-# ================== DB ==================
+
+# ================== STARTUP / SHUTDOWN ==================
 
 @app.on_event("startup")
 async def startup():
@@ -28,19 +32,43 @@ async def startup():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=3,   # 🔴 КРИТИЧНО для Render Free
-        command_timeout=60
+        max_size=3   # критично для Render Free
     )
+
 
 @app.on_event("shutdown")
 async def shutdown():
     if pool:
         await pool.close()
 
-# ================== AUTH ==================
 
-def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(password, hashed)
+# ================== ХЭШ / ПРОВЕРКА ПАРОЛЯ ==================
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """
+    stored_hash формат:
+    pbkdf2_sha256$29000$salt_hex$hash_hex
+    """
+    try:
+        algo, iterations, salt_hex, hash_hex = stored_hash.split("$")
+        iterations = int(iterations)
+
+        salt = binascii.unhexlify(salt_hex)
+        stored = binascii.unhexlify(hash_hex)
+
+        new_hash = hashlib.pbkdf2_hmac(
+            ALGORITHM,
+            password.encode(),
+            salt,
+            iterations,
+            dklen=len(stored)
+        )
+
+        return hmac.compare_digest(new_hash, stored)
+
+    except Exception:
+        return False
+
 
 # ================== ROUTES ==================
 
@@ -49,6 +77,7 @@ async def root(request: Request):
     if request.session.get("user"):
         return RedirectResponse("/dispatcher", status_code=302)
     return RedirectResponse("/login", status_code=302)
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_form():
@@ -60,6 +89,7 @@ async def login_form():
         <button>Войти</button>
     </form>
     """
+
 
 @app.post("/login")
 async def login(
@@ -88,6 +118,7 @@ async def login(
 
     return RedirectResponse("/dispatcher", status_code=302)
 
+
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     if request.session.get("role") != "dispatcher":
@@ -95,16 +126,16 @@ async def dispatcher(request: Request):
 
     return """
     <h1>Диспетчерская</h1>
-    <p>Вы успешно вошли</p>
+    <p>Вы вошли успешно</p>
     <a href="/logout">Выйти</a>
     """
+
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# ================== DEBUG ==================
 
 @app.get("/db-check")
 async def db_check():
