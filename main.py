@@ -17,6 +17,10 @@ pool: asyncpg.Pool | None = None
 
 
 # ---------- PASSWORD UTILS ----------
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto",
+)
 
 def verify_password(password: str, stored: str) -> bool:
     """
