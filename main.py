@@ -1,17 +1,22 @@
 import os
+import hashlib
+import hmac
+import binascii
 import asyncpg
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
-from passlib.context import CryptContext
+
+# ================== НАСТРОЙКИ ==================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
-pwd_context = CryptContext(
-    schemes=["pbkdf2_sha256"],
-    deprecated="auto"
-)
+ITERATIONS = 29000
+ALGORITHM = "sha256"
+
+# ================== APP ==================
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -19,13 +24,15 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 pool: asyncpg.Pool | None = None
 
 
+# ================== STARTUP / SHUTDOWN ==================
+
 @app.on_event("startup")
 async def startup():
     global pool
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=3
+        max_size=3   # критично для Render Free
     )
 
 
@@ -35,9 +42,35 @@ async def shutdown():
         await pool.close()
 
 
-def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(password, hashed)
+# ================== ХЭШ / ПРОВЕРКА ПАРОЛЯ ==================
 
+def verify_password(password: str, stored_hash: str) -> bool:
+    """
+    stored_hash формат:
+    pbkdf2_sha256$29000$salt_hex$hash_hex
+    """
+    try:
+        algo, iterations, salt_hex, hash_hex = stored_hash.split("$")
+        iterations = int(iterations)
+
+        salt = binascii.unhexlify(salt_hex)
+        stored = binascii.unhexlify(hash_hex)
+
+        new_hash = hashlib.pbkdf2_hmac(
+            ALGORITHM,
+            password.encode(),
+            salt,
+            iterations,
+            dklen=len(stored)
+        )
+
+        return hmac.compare_digest(new_hash, stored)
+
+    except Exception:
+        return False
+
+
+# ================== ROUTES ==================
 
 @app.get("/")
 async def root(request: Request):
@@ -51,9 +84,9 @@ async def login_form():
     return """
     <h2>Вход диспетчера</h2>
     <form method="post">
-        <input name="username" placeholder="Логин"><br>
-        <input name="password" type="password" placeholder="Пароль"><br>
-        <button type="submit">Войти</button>
+        <input name="username" placeholder="Логин"><br><br>
+        <input name="password" type="password" placeholder="Пароль"><br><br>
+        <button>Войти</button>
     </form>
     """
 
@@ -66,19 +99,18 @@ async def login(
 ):
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT username, password_hash, role FROM users WHERE username=$1",
+            """
+            SELECT username, password_hash, role
+            FROM users
+            WHERE username = $1
+            """,
             username
         )
 
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    try:
-        ok = verify_password(password, user["password_hash"])
-    except Exception:
-        return RedirectResponse("/login", status_code=302)
-
-    if not ok:
+    if not verify_password(password, user["password_hash"]):
         return RedirectResponse("/login", status_code=302)
 
     request.session["user"] = user["username"]
@@ -103,3 +135,10 @@ async def dispatcher(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
+
+
+@app.get("/db-check")
+async def db_check():
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT 1")
+    return {"status": "ok"}
