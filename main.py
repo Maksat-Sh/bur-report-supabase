@@ -1,12 +1,17 @@
 import os
 import asyncpg
-import hashlib
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
+from passlib.context import CryptContext
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
+
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto"
+)
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -14,26 +19,13 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 pool: asyncpg.Pool | None = None
 
 
-# =========================
-# Utils
-# =========================
-
-def hash_password(password: str) -> str:
-    """Простой SHA256 (достаточно для диспетчера на MVP)"""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-# =========================
-# Lifecycle
-# =========================
-
 @app.on_event("startup")
 async def startup():
     global pool
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=3  # важно для Render Free
+        max_size=3
     )
 
 
@@ -43,13 +35,13 @@ async def shutdown():
         await pool.close()
 
 
-# =========================
-# Routes
-# =========================
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
 
 @app.get("/")
 async def root(request: Request):
-    if request.session.get("user"):
+    if request.session.get("role") == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     return RedirectResponse("/login", status_code=302)
 
@@ -57,11 +49,11 @@ async def root(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_form():
     return """
-    <h2>Вход</h2>
+    <h2>Вход диспетчера</h2>
     <form method="post">
-        <input name="username" placeholder="Логин"><br><br>
-        <input name="password" type="password" placeholder="Пароль"><br><br>
-        <button type="submit">Войти</button>
+        <input name="username" placeholder="Логин"><br>
+        <input name="password" type="password" placeholder="Пароль"><br>
+        <button>Войти</button>
     </form>
     """
 
@@ -74,18 +66,14 @@ async def login(
 ):
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
-            """
-            SELECT username, password_hash, role
-            FROM users
-            WHERE username = $1
-            """,
+            "SELECT username, password_hash, role FROM users WHERE username=$1",
             username
         )
 
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    if hash_password(password) != user["password_hash"]:
+    if not verify_password(password, user["password_hash"]):
         return RedirectResponse("/login", status_code=302)
 
     request.session["user"] = user["username"]
@@ -110,10 +98,3 @@ async def dispatcher(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
-
-
-@app.get("/db-check")
-async def db_check():
-    async with pool.acquire() as conn:
-        await conn.execute("SELECT 1")
-    return {"status": "ok"}
