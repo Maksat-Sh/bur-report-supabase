@@ -7,3 +7,6 @@ jinja2
 python-dotenv
 itsdangerous
 openpyxl
+psycopg2-binary
+passlib[bcrypt]
+pandas
