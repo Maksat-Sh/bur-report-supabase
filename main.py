@@ -3,188 +3,197 @@ import hashlib
 import hmac
 import binascii
 import asyncpg
-from io import BytesIO
+from datetime import datetime
 
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
-from openpyxl import Workbook
+
+# ================== CONFIG ==================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
-ITERATIONS = 29000
 ALGORITHM = "sha256"
+
+# ================== APP ==================
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
-templates = Jinja2Templates(directory="templates")
 
 pool: asyncpg.Pool | None = None
 
+# ================== STARTUP ==================
 
 @app.on_event("startup")
 async def startup():
     global pool
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=3)
-
+    pool = await asyncpg.create_pool(
+        DATABASE_URL,
+        min_size=1,
+        max_size=3
+    )
 
 @app.on_event("shutdown")
 async def shutdown():
     if pool:
         await pool.close()
 
-
-# ====== ХЭШ ======
+# ================== PASSWORD CHECK ==================
 
 def verify_password(password: str, stored_hash: str) -> bool:
+    """
+    stored_hash:
+    pbkdf2_sha256$29000$salt_hex$hash_hex
+    """
     try:
         algo, iterations, salt_hex, hash_hex = stored_hash.split("$")
         iterations = int(iterations)
+
         salt = binascii.unhexlify(salt_hex)
         stored = binascii.unhexlify(hash_hex)
 
-        new = hashlib.pbkdf2_hmac(
+        new_hash = hashlib.pbkdf2_hmac(
             ALGORITHM,
             password.encode(),
             salt,
             iterations,
             dklen=len(stored)
         )
-        return hmac.compare_digest(new, stored)
+
+        return hmac.compare_digest(new_hash, stored)
     except Exception:
         return False
 
-
-# ====== AUTH ======
+# ================== ROUTES ==================
 
 @app.get("/")
 async def root(request: Request):
-    if request.session.get("user"):
-        return RedirectResponse("/dispatcher", 302)
-    return RedirectResponse("/login", 302)
+    if request.session.get("role") == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+    if request.session.get("role") == "bur":
+        return RedirectResponse("/bur", status_code=302)
+    return RedirectResponse("/login", status_code=302)
 
+# ---------- LOGIN ----------
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_form(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
+async def login_form():
+    return """
+    <h2>Вход</h2>
+    <form method="post">
+        <input name="username" placeholder="Логин"><br><br>
+        <input name="password" type="password" placeholder="Пароль"><br><br>
+        <button>Войти</button>
+    </form>
+    """
 
 @app.post("/login")
-async def login(request: Request,
-                username: str = Form(...),
-                password: str = Form(...)):
-    async with pool.acquire() as conn:
-        user = await conn.fetchrow(
-            "SELECT * FROM users WHERE username=$1", username
-        )
-
-    if not user or not verify_password(password, user["password_hash"]):
-        return RedirectResponse("/login", 302)
-
-    request.session["user"] = user["username"]
-    request.session["role"] = user["role"]
-
-    return RedirectResponse("/dispatcher", 302)
-
-
-@app.get("/logout")
-async def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login", 302)
-
-
-# ====== DRILLER ======
-
-@app.get("/driller", response_class=HTMLResponse)
-async def driller_form(request: Request):
-    return templates.TemplateResponse("driller.html", {"request": request})
-
-
-@app.post("/driller")
-async def submit_report(
-    section: str = Form(...),
-    rig_number: str = Form(...),
-    meters: float = Form(...),
-    pogonometr: float = Form(...),
-    operation: str = Form(...),
-    responsible: str = Form(...),
-    note: str = Form("")
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
 ):
     async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO reports
-            (section, rig_number, meters, pogonometr, operation, responsible, note, driller)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-        """, section, rig_number, meters, pogonometr, operation, responsible, note, responsible)
+        user = await conn.fetchrow(
+            """
+            SELECT id, username, role, password_hash
+            FROM users
+            WHERE username=$1
+            """,
+            username
+        )
 
-    return {"message": "ok"}
+    if not user:
+        return RedirectResponse("/login", status_code=302)
 
+    if not verify_password(password, user["password_hash"]):
+        return RedirectResponse("/login", status_code=302)
 
-# ====== DISPATCHER ======
+    request.session["user_id"] = user["id"]
+    request.session["username"] = user["username"]
+    request.session["role"] = user["role"]
+
+    if user["role"] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
+
+    return RedirectResponse("/bur", status_code=302)
+
+# ---------- DISPATCHER ----------
 
 @app.get("/dispatcher", response_class=HTMLResponse)
 async def dispatcher(request: Request):
     if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login", 302)
+        return RedirectResponse("/login", status_code=302)
+
+    return """
+    <h1>Диспетчерская</h1>
+    <ul>
+        <li><a href="/reports">Сводки</a></li>
+        <li><a href="/logout">Выйти</a></li>
+    </ul>
+    """
+
+# ---------- BUR FORM ----------
+
+@app.get("/bur", response_class=HTMLResponse)
+async def bur_form(request: Request):
+    if request.session.get("role") != "bur":
+        return RedirectResponse("/login", status_code=302)
+
+    return """
+    <h2>Смена буровика</h2>
+    <form method="post" action="/bur/report">
+        Участок: <input name="area"><br><br>
+        № буровой: <input name="rig"><br><br>
+        Метраж: <input name="meters" type="number"><br><br>
+        Погонометр: <input name="pogonometr"><br><br>
+        Примечание:<br>
+        <textarea name="note"></textarea><br><br>
+        <button>Отправить</button>
+    </form>
+    <br>
+    <a href="/logout">Выйти</a>
+    """
+
+@app.post("/bur/report")
+async def bur_report(
+    request: Request,
+    area: str = Form(...),
+    rig: str = Form(...),
+    meters: int = Form(...),
+    pogonometr: str = Form(...),
+    note: str = Form("")
+):
+    if request.session.get("role") != "bur":
+        return RedirectResponse("/login", status_code=302)
 
     async with pool.acquire() as conn:
-        reports = await conn.fetch(
-            "SELECT * FROM reports ORDER BY created_at DESC"
+        await conn.execute(
+            """
+            INSERT INTO reports
+            (created_at, area, rig, meters, pogonometr, note, user_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            """,
+            datetime.utcnow(),
+            area,
+            rig,
+            meters,
+            pogonometr,
+            note,
+            request.session["user_id"]
         )
 
-    return templates.TemplateResponse(
-        "dispatcher.html",
-        {"request": request, "reports": reports}
-    )
+    return RedirectResponse("/bur", status_code=302)
 
+# ---------- LOGOUT ----------
 
-# ====== EXCEL ======
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
 
-@app.get("/export")
-async def export_excel(request: Request):
-    if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login", 302)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.append([
-        "Дата",
-        "Участок",
-        "Буровая",
-        "Метраж",
-        "Погонометр",
-        "Операция",
-        "Ответственный",
-        "Примечание"
-    ])
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM reports ORDER BY created_at")
-
-    for r in rows:
-        ws.append([
-            r["created_at"],
-            r["section"],
-            r["rig_number"],
-            r["meters"],
-            r["pogonometr"],
-            r["operation"],
-            r["responsible"],
-            r["note"]
-        ])
-
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=reports.xlsx"}
-    )
-
+# ---------- DB CHECK ----------
 
 @app.get("/db-check")
 async def db_check():
