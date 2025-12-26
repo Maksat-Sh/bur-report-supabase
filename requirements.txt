@@ -6,4 +6,4 @@ python-multipart
 jinja2
 python-dotenv
 itsdangerous
-passlib[bcrypt]==1.7.4
+openpyxl
