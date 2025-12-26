@@ -1,16 +1,28 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>Диспетчер</title>
-</head>
-<body>
-
-<h1>Добро пожаловать, {{username}}</h1>
-
-<p>Это страница диспетчера</p>
-
+<h1>Диспетчерская</h1>
+<a href="/export">Экспорт в Excel</a> |
 <a href="/logout">Выйти</a>
 
-</body>
-</html>
+<table border="1" cellpadding="5">
+<tr>
+  <th>Дата</th>
+  <th>Участок</th>
+  <th>Буровая</th>
+  <th>Метраж</th>
+  <th>Погонометр</th>
+  <th>Операция</th>
+  <th>Ответственный</th>
+  <th>Примечание</th>
+</tr>
+{% for r in reports %}
+<tr>
+  <td>{{ r.created_at }}</td>
+  <td>{{ r.section }}</td>
+  <td>{{ r.rig_number }}</td>
+  <td>{{ r.meters }}</td>
+  <td>{{ r.pogonometr }}</td>
+  <td>{{ r.operation }}</td>
+  <td>{{ r.responsible }}</td>
+  <td>{{ r.note }}</td>
+</tr>
+{% endfor %}
+</table>
