@@ -41,7 +41,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 @app.get("/")
 async def root(request: Request):
-    if request.session.get("role") == "dispatcher":
+    if request.session.get("user"):
         return RedirectResponse("/dispatcher", status_code=302)
     return RedirectResponse("/login", status_code=302)
 
@@ -53,7 +53,7 @@ async def login_form():
     <form method="post">
         <input name="username" placeholder="Логин"><br>
         <input name="password" type="password" placeholder="Пароль"><br>
-        <button>Войти</button>
+        <button type="submit">Войти</button>
     </form>
     """
 
@@ -73,7 +73,12 @@ async def login(
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    if not verify_password(password, user["password_hash"]):
+    try:
+        ok = verify_password(password, user["password_hash"])
+    except Exception:
+        return RedirectResponse("/login", status_code=302)
+
+    if not ok:
         return RedirectResponse("/login", status_code=302)
 
     request.session["user"] = user["username"]
