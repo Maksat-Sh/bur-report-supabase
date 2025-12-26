@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from passlib.context import CryptContext
 import psycopg2
@@ -10,53 +10,64 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto"
+)
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
+def verify_password(password: str, password_hash: str) -> bool:
+    return pwd_context.verify(password, password_hash)
 
-def verify_password(password, hash):
-    return pwd_context.verify(password, hash)
+def get_user(username: str):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT username, password_hash, role FROM users WHERE username=%s",
+        (username,)
+    )
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    return user
 
 @app.get("/", response_class=HTMLResponse)
 def root():
     return RedirectResponse("/login")
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
+def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-def login(username: str = Form(...), password: str = Form(...)):
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT password_hash, role FROM users WHERE username=%s",
-        (username,)
-    )
-    user = cur.fetchone()
-
-    cur.close()
-    conn.close()
-
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    user = get_user(username)
     if not user:
-        return RedirectResponse("/login", status_code=302)
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Пользователь не найден"}
+        )
 
-    password_hash, role = user
+    _, password_hash, role = user
 
     if not verify_password(password, password_hash):
-        return RedirectResponse("/login", status_code=302)
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный пароль"}
+        )
 
     if role == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
-
-    return RedirectResponse("/driller", status_code=302)
+    else:
+        return RedirectResponse("/worker", status_code=302)
 
 @app.get("/dispatcher", response_class=HTMLResponse)
-def dispatcher_page(request: Request):
-    return templates.TemplateResponse("dispatcher.html", {"request": request})
+def dispatcher(request: Request):
+    return HTMLResponse("<h1>Диспетчер вошёл</h1>")
 
-@app.get("/driller", response_class=HTMLResponse)
-def driller_page(request: Request):
-    return templates.TemplateResponse("driller.html", {"request": request})
+@app.get("/worker", response_class=HTMLResponse)
+def worker(request: Request):
+    return HTMLResponse("<h1>Буровик вошёл</h1>")
