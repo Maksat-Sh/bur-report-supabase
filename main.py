@@ -1,22 +1,12 @@
 import os
-import hashlib
-import hmac
-import binascii
 import asyncpg
-
+import hashlib
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-# ================== НАСТРОЙКИ ==================
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
-
-ITERATIONS = 29000
-ALGORITHM = "sha256"
-
-# ================== APP ==================
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -24,7 +14,18 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 pool: asyncpg.Pool | None = None
 
 
-# ================== STARTUP / SHUTDOWN ==================
+# =========================
+# Utils
+# =========================
+
+def hash_password(password: str) -> str:
+    """Простой SHA256 (достаточно для диспетчера на MVP)"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+# =========================
+# Lifecycle
+# =========================
 
 @app.on_event("startup")
 async def startup():
@@ -32,7 +33,7 @@ async def startup():
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         min_size=1,
-        max_size=3   # критично для Render Free
+        max_size=3  # важно для Render Free
     )
 
 
@@ -42,35 +43,9 @@ async def shutdown():
         await pool.close()
 
 
-# ================== ХЭШ / ПРОВЕРКА ПАРОЛЯ ==================
-
-def verify_password(password: str, stored_hash: str) -> bool:
-    """
-    stored_hash формат:
-    pbkdf2_sha256$29000$salt_hex$hash_hex
-    """
-    try:
-        algo, iterations, salt_hex, hash_hex = stored_hash.split("$")
-        iterations = int(iterations)
-
-        salt = binascii.unhexlify(salt_hex)
-        stored = binascii.unhexlify(hash_hex)
-
-        new_hash = hashlib.pbkdf2_hmac(
-            ALGORITHM,
-            password.encode(),
-            salt,
-            iterations,
-            dklen=len(stored)
-        )
-
-        return hmac.compare_digest(new_hash, stored)
-
-    except Exception:
-        return False
-
-
-# ================== ROUTES ==================
+# =========================
+# Routes
+# =========================
 
 @app.get("/")
 async def root(request: Request):
@@ -82,11 +57,11 @@ async def root(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_form():
     return """
-    <h2>Вход диспетчера</h2>
+    <h2>Вход</h2>
     <form method="post">
         <input name="username" placeholder="Логин"><br><br>
         <input name="password" type="password" placeholder="Пароль"><br><br>
-        <button>Войти</button>
+        <button type="submit">Войти</button>
     </form>
     """
 
@@ -110,7 +85,7 @@ async def login(
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    if not verify_password(password, user["password_hash"]):
+    if hash_password(password) != user["password_hash"]:
         return RedirectResponse("/login", status_code=302)
 
     request.session["user"] = user["username"]
