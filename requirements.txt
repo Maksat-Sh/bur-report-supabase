@@ -9,5 +9,4 @@ itsdangerous
 openpyxl
 psycopg2-binary
 pandas
-passlib[bcrypt]
 bcrypt
