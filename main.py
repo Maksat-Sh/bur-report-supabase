@@ -1,177 +1,117 @@
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
+import os
+import psycopg2
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
-import sqlite3
-import hashlib
-from datetime import datetime
+from passlib.context import CryptContext
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY", "secret")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="super-secret-key")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-templates = Jinja2Templates(directory="templates")
-
-# ======================
-# БАЗА ДАННЫХ
-# ======================
 def get_db():
-    return sqlite3.connect("db.sqlite3", check_same_thread=False)
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-db = get_db()
-cursor = db.cursor()
+def verify_password(password, hash):
+    return pwd_context.verify(password, hash)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT,
-    bur TEXT,
-    area TEXT,
-    meters REAL,
-    pogonometer REAL,
-    note TEXT
-)
-""")
-
-db.commit()
-
-# ======================
-# ХЭШ
-# ======================
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# ======================
-# СОЗДАНИЕ ПОЛЬЗОВАТЕЛЕЙ (ОДИН РАЗ)
-# ======================
-def create_user(username, password, role):
-    try:
-        cursor.execute(
-            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-            (username, hash_password(password), role)
-        )
-        db.commit()
-    except:
-        pass
-
-create_user("dispatcher", "123", "dispatcher")
-create_user("bur1", "123", "bur")
-create_user("bur2", "123", "bur")
-
-# ======================
-# АВТОРИЗАЦИЯ
-# ======================
-@app.get("/", response_class=HTMLResponse)
-def root():
-    return RedirectResponse("/login")
-
+# ---------- LOGIN ----------
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+def login_page():
+    return """
+    <h2>Вход</h2>
+    <form method="post">
+      <input name="username" placeholder="Логин"><br>
+      <input name="password" type="password" placeholder="Пароль"><br>
+      <button>Войти</button>
+    </form>
+    """
 
 @app.post("/login")
-def login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
-):
-    cursor.execute(
-        "SELECT id, password, role FROM users WHERE username = ?",
-        (username,)
-    )
-    user = cursor.fetchone()
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT password_hash, role FROM users WHERE username=%s", (username,))
+    row = cur.fetchone()
+    cur.close()
+    db.close()
 
-    if not user:
-        return RedirectResponse("/login", status_code=302)
+    if not row or not verify_password(password, row[0]):
+        return HTMLResponse("Неверный логин или пароль", status_code=401)
 
-    user_id, password_hash, role = user
+    request.session["user"] = username
+    request.session["role"] = row[1]
 
-    if hash_password(password) != password_hash:
-        return RedirectResponse("/login", status_code=302)
+    return RedirectResponse("/reports", status_code=302)
 
-    request.session["user"] = {
-        "id": user_id,
-        "username": username,
-        "role": role
-    }
+# ---------- ОТПРАВКА СВОДКИ ----------
+@app.get("/submit", response_class=HTMLResponse)
+def submit_form():
+    return """
+    <h2>Сводка буровика</h2>
+    <form method="post">
+      Бур: <input name="bur"><br>
+      Участок: <input name="uchastok"><br>
+      Метраж: <input name="metraj" type="number"><br>
+      Погонометр: <input name="pogonometr" type="number"><br>
+      Примечание: <input name="note"><br>
+      <button>Отправить</button>
+    </form>
+    """
 
-    if role == "dispatcher":
-        return RedirectResponse("/reports", status_code=302)
-    else:
-        return RedirectResponse("/report/new", status_code=302)
-
-@app.get("/logout")
-def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login")
-
-# ======================
-# ФОРМА БУРОВИКА
-# ======================
-@app.get("/report/new", response_class=HTMLResponse)
-def new_report(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] != "bur":
-        return RedirectResponse("/login")
-
-    return templates.TemplateResponse(
-        "report_form.html",
-        {"request": request, "user": user}
-    )
-
-@app.post("/report/new")
-def save_report(
+@app.post("/submit")
+def submit(
     request: Request,
     bur: str = Form(...),
-    area: str = Form(...),
-    meters: float = Form(...),
-    pogonometer: float = Form(...),
+    uchastok: str = Form(...),
+    metraj: int = Form(...),
+    pogonometr: int = Form(...),
     note: str = Form("")
 ):
-    user = request.session.get("user")
-    if not user or user["role"] != "bur":
-        return RedirectResponse("/login")
+    if request.session.get("role") != "bur":
+        return HTMLResponse("Доступ запрещён", status_code=403)
 
-    cursor.execute("""
-        INSERT INTO reports (date, bur, area, meters, pogonometer, note)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        bur,
-        area,
-        meters,
-        pogonometer,
-        note
-    ))
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        INSERT INTO reports (bur, uchastok, metraj, pogonometr, note)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (bur, uchastok, metraj, pogonometr, note))
     db.commit()
+    cur.close()
+    db.close()
 
-    return RedirectResponse("/report/new", status_code=302)
+    return HTMLResponse("Сводка отправлена")
 
-# ======================
-# ОТЧЁТЫ ДИСПЕТЧЕРА
-# ======================
+# ---------- ПРОСМОТР СВОДОК ----------
 @app.get("/reports", response_class=HTMLResponse)
 def reports(request: Request):
-    user = request.session.get("user")
-    if not user or user["role"] != "dispatcher":
+    if request.session.get("role") != "dispatcher":
         return RedirectResponse("/login")
 
-    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
-    reports = cursor.fetchall()
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        SELECT id, created_at, bur, uchastok, metraj, pogonometr, note
+        FROM reports ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    db.close()
 
-    return templates.TemplateResponse(
-        "reports.html",
-        {
-            "request": request,
-            "user": user,
-            "reports": reports
-        }
-    )
+    html = """
+    <h2>Сводки</h2>
+    <table border=1>
+    <tr>
+      <th>ID</th><th>Дата</th><th>Бур</th><th>Участок</th>
+      <th>Метраж</th><th>Погонометр</th><th>Примечание</th>
+    </tr>
+    """
+    for r in rows:
+        html += f"<tr>{''.join(f'<td>{x}</td>' for x in r)}</tr>"
+    html += "</table>"
+    return html
