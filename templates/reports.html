@@ -1,33 +1,60 @@
-<!doctype html>
-<html lang="ru">
+<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Сводки — BurReport</title>
-<link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <title>Сводки</title>
 </head>
 <body>
-<header class="topbar">
-<div>{{ user.username }}</div>
-</header>
-<main class="container">
-<h1>Сводки</h1>
-<table>
-<thead><tr><th>ID</th><th>Дата</th><th>Бур</th><th>Участок</th><th>Метраж</th><th>Погонометр</th><th>Примечание</th></tr></thead>
-<tbody>
+
+<h3>Пользователь: {{ user.username }}</h3>
+
+<form method="post">
+    <label>Буровая:</label><br>
+    <input name="bur" required><br><br>
+
+    <label>Участок:</label><br>
+    <input name="site" required><br><br>
+
+    <label>Метраж:</label><br>
+    <input type="number" step="0.01" name="meters" required><br><br>
+
+    <label>Погонометр:</label><br>
+    <input type="number" step="0.01" name="pogonometr" required><br><br>
+
+    <label>Примечание:</label><br>
+    <textarea name="note"></textarea><br><br>
+
+    <button type="submit">Отправить сводку</button>
+</form>
+
+<hr>
+
+<h2>Сводки</h2>
+
+<table border="1" cellpadding="5">
+<tr>
+    <th>ID</th>
+    <th>Дата</th>
+    <th>Бур</th>
+    <th>Участок</th>
+    <th>Метраж</th>
+    <th>Погонометр</th>
+    <th>Примечание</th>
+</tr>
+
 {% for r in reports %}
 <tr>
-<td>{{ r.id }}</td>
-<td>{{ r.created_at }}</td>
-<td>{{ r.username }}</td>
-<td>{{ r.area }}</td>
-<td>{{ r.meter }}</td>
-<td>{{ r.pognometr }}</td>
-<td>{{ r.comment }}</td>
+    <td>{{ r[0] }}</td>
+    <td>{{ r[1] }}</td>
+    <td>{{ r[2] }}</td>
+    <td>{{ r[3] }}</td>
+    <td>{{ r[4] }}</td>
+    <td>{{ r[5] }}</td>
+    <td>{{ r[6] }}</td>
 </tr>
 {% endfor %}
-</tbody>
+
 </table>
-</main>
+
 </body>
 </html>
