@@ -1,65 +1,54 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-import hashlib
 
 app = FastAPI()
-
-app.add_middleware(
-    SessionMiddleware,
-    secret_key="SUPER_SECRET_KEY_123"
-)
+app.add_middleware(SessionMiddleware, secret_key="super-secret-key")
 
 templates = Jinja2Templates(directory="templates")
 
-# ======================
-# ХЭШИРОВАНИЕ
-# ======================
-
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def verify_password(password: str, password_hash: str) -> bool:
-    return hash_password(password) == password_hash
-
-PASSWORD_HASH_123 = hash_password("123")
-
-# ======================
-# ПОЛЬЗОВАТЕЛИ
-# ======================
-
-users = {
+# =========================
+# ВРЕМЕННАЯ БАЗА ПОЛЬЗОВАТЕЛЕЙ
+# пароль у всех: 123
+# =========================
+USERS = {
     "dispatcher": {
-        "password": PASSWORD_HASH_123,
+        "username": "dispatcher",
+        "password": "123",
         "role": "dispatcher"
     },
     "bur1": {
-        "password": PASSWORD_HASH_123,
-        "role": "driller"
+        "username": "bur1",
+        "password": "123",
+        "role": "bur"
     },
     "bur2": {
-        "password": PASSWORD_HASH_123,
-        "role": "driller"
+        "username": "bur2",
+        "password": "123",
+        "role": "bur"
     }
 }
 
-# ======================
-# ROOT
-# ======================
 
+# =========================
+# ГЛАВНАЯ
+# =========================
 @app.get("/")
 def root():
     return RedirectResponse("/login")
 
-# ======================
-# LOGIN
-# ======================
 
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+# =========================
+# LOGIN
+# =========================
+@app.get("/login")
+def login_form(request: Request):
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "error": None
+    })
+
 
 @app.post("/login")
 def login(
@@ -67,48 +56,64 @@ def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    user = users.get(username)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
+    user = USERS.get(username)
 
-    if not verify_password(password, user["password"]):
-        return RedirectResponse("/login", status_code=302)
+    if not user or user["password"] != password:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Неверный логин или пароль"
+            }
+        )
 
-    request.session["user"] = username
-    request.session["role"] = user["role"]
+    request.session["user"] = {
+        "username": user["username"],
+        "role": user["role"]
+    }
 
     if user["role"] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
     else:
         return RedirectResponse("/reports", status_code=302)
 
-# ======================
-# LOGOUT
-# ======================
 
+# =========================
+# LOGOUT
+# =========================
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
+    return RedirectResponse("/login", status_code=302)
 
-# ======================
+
+# =========================
 # DISPATCHER
-# ======================
-
-@app.get("/dispatcher", response_class=HTMLResponse)
+# =========================
+@app.get("/dispatcher")
 def dispatcher(request: Request):
-    if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login")
+    user = request.session.get("user")
 
-    return templates.TemplateResponse("dispatcher.html", {"request": request})
+    if not user or user["role"] != "dispatcher":
+        return RedirectResponse("/login", status_code=302)
 
-# ======================
+    return templates.TemplateResponse("dispatcher.html", {
+        "request": request,
+        "user": user
+    })
+
+
+# =========================
 # REPORTS (БУРОВИКИ)
-# ======================
-
-@app.get("/reports", response_class=HTMLResponse)
+# =========================
+@app.get("/reports")
 def reports(request: Request):
-    if request.session.get("role") != "driller":
-        return RedirectResponse("/login")
+    user = request.session.get("user")
 
-    return templates.TemplateResponse("reports.html", {"request": request})
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+
+    return templates.TemplateResponse("reports.html", {
+        "request": request,
+        "user": user
+    })
