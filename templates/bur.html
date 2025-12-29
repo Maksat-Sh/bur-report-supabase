@@ -1,47 +1,34 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Сводка буровика</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Буровик</title>
 </head>
 <body>
+    <h2>Форма буровика</h2>
 
-<a href="/logout" class="logout">Выйти</a>
+    <p>Пользователь: <b>{{ user }}</b></p>
 
-<div class="box">
-    <h2>Сводка буровика</h2>
+    <form method="post" action="/bur">
+        <label>Участок:</label><br>
+        <input type="text" name="section" required><br><br>
 
-    {% if request.query_params.ok %}
-        <p class="ok">Отправлено!</p>
-    {% endif %}
+        <label>№ буровой:</label><br>
+        <input type="text" name="rig" required><br><br>
 
-    <form method="post">
+        <label>Метраж:</label><br>
+        <input type="number" step="0.01" name="meters" required><br><br>
 
-        <label>Участок</label>
-        <input name="area" required>
+        <label>Погонометр:</label><br>
+        <input type="number" step="0.01" name="pogon" required><br><br>
 
-        <label>№ буровой</label>
-        <input name="rig_number" required>
+        <label>Примечание:</label><br>
+        <textarea name="note"></textarea><br><br>
 
-        <label>Метраж</label>
-        <input name="depth" required>
-
-        <label>Погонометр</label>
-        <input name="pogon" required>
-
-        <label>Вид операции</label>
-        <input name="operation" required>
-
-        <label>Ответственное лицо</label>
-        <input name="responsible" required>
-
-        <label>Примечание</label>
-        <textarea name="note"></textarea>
-
-        <button>Отправить</button>
+        <button type="submit">Отправить</button>
     </form>
-</div>
 
+    <br>
+    <a href="/logout">Выйти</a>
 </body>
 </html>
