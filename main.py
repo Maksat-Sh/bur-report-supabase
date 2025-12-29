@@ -6,62 +6,56 @@ import sqlite3
 from datetime import datetime
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="super-secret-key")
+app.add_middleware(SessionMiddleware, secret_key="SECRET123")
 
 templates = Jinja2Templates(directory="templates")
 
-# -------------------
-# НАСТРОЙКИ
-# -------------------
+# -------------------- БАЗА --------------------
+conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
+cursor = conn.cursor()
 
-USERS = {
-    "dispatcher": {"password": "123", "role": "dispatcher"},
-    "bur1": {"password": "123", "role": "bur"},
-    "bur2": {"password": "123", "role": "bur"},
-}
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT
+)
+""")
 
-# -------------------
-# БАЗА
-# -------------------
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    bur TEXT,
+    area TEXT,
+    meters INTEGER,
+    pogonometr INTEGER,
+    note TEXT
+)
+""")
 
-def get_db():
-    conn = sqlite3.connect("reports.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+conn.commit()
 
-def init_db():
-    db = get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            bur TEXT,
-            area TEXT,
-            meters REAL,
-            pogonometr REAL,
-            note TEXT
-        )
-    """)
-    db.commit()
-    db.close()
+# -------------------- ПОЛЬЗОВАТЕЛИ --------------------
+def init_users():
+    users = [
+        ("dispatcher", "123", "dispatcher"),
+        ("bur1", "123", "bur"),
+        ("bur2", "123", "bur"),
+    ]
+    for u in users:
+        try:
+            cursor.execute(
+                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)", u
+            )
+        except:
+            pass
+    conn.commit()
 
-init_db()
+init_users()
 
-# -------------------
-# AUTH
-# -------------------
-
-def get_current_user(request: Request):
-    return request.session.get("user")
-
-# -------------------
-# ROUTES
-# -------------------
-
-@app.get("/")
-def root():
-    return RedirectResponse("/login")
-
+# -------------------- LOGIN --------------------
 @app.get("/login")
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -72,88 +66,73 @@ def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    user = USERS.get(username)
-    if not user or user["password"] != password:
+    cursor.execute(
+        "SELECT role FROM users WHERE username=? AND password=?",
+        (username, password)
+    )
+    user = cursor.fetchone()
+
+    if not user:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Неверный логин или пароль"}
         )
 
-    request.session["user"] = {"username": username, "role": user["role"]}
+    request.session["user"] = username
+    request.session["role"] = user[0]
 
-    if user["role"] == "dispatcher":
-        return RedirectResponse("/reports", status_code=302)
+    if user[0] == "dispatcher":
+        return RedirectResponse("/dispatcher", status_code=302)
     else:
         return RedirectResponse("/bur", status_code=302)
 
+# -------------------- LOGOUT --------------------
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
-    return RedirectResponse("/login")
+    return RedirectResponse("/login", status_code=302)
 
-# -------------------
-# БУРОВИК
-# -------------------
-
+# -------------------- BUR FORM --------------------
 @app.get("/bur")
-def bur_form(request: Request):
-    user = get_current_user(request)
-    if not user or user["role"] != "bur":
-        return RedirectResponse("/login")
+def bur_page(request: Request):
+    if request.session.get("role") != "bur":
+        return RedirectResponse("/login", status_code=302)
 
     return templates.TemplateResponse(
-        "bur_form.html",
-        {"request": request, "user": user}
+        "bur.html",
+        {"request": request, "user": request.session["user"]}
     )
 
 @app.post("/bur")
-def bur_submit(
+def send_report(
     request: Request,
     area: str = Form(...),
-    meters: float = Form(...),
-    pogonometr: float = Form(...),
+    meters: int = Form(...),
+    pogonometr: int = Form(...),
     note: str = Form("")
 ):
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login")
+    bur = request.session.get("user")
+    date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    db = get_db()
-    db.execute("""
+    cursor.execute("""
         INSERT INTO reports (date, bur, area, meters, pogonometr, note)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        user["username"],
-        area,
-        meters,
-        pogonometr,
-        note
-    ))
-    db.commit()
-    db.close()
+    """, (date, bur, area, meters, pogonometr, note))
+
+    conn.commit()
 
     return RedirectResponse("/bur", status_code=302)
 
-# -------------------
-# ДИСПЕТЧЕР
-# -------------------
+# -------------------- DISPATCHER --------------------
+@app.get("/dispatcher")
+def dispatcher_page(request: Request):
+    if request.session.get("role") != "dispatcher":
+        return RedirectResponse("/login", status_code=302)
 
-@app.get("/reports")
-def reports(request: Request):
-    user = get_current_user(request)
-    if not user or user["role"] != "dispatcher":
-        return RedirectResponse("/login")
-
-    db = get_db()
-    rows = db.execute("SELECT * FROM reports ORDER BY id DESC").fetchall()
-    db.close()
+    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
+    reports = cursor.fetchall()
 
     return templates.TemplateResponse(
-        "reports.html",
-        {
-            "request": request,
-            "user": user,
-            "reports": rows
-        }
+        "dispatcher.html",
+        {"request": request, "reports": reports}
     )
