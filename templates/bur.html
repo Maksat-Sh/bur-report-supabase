@@ -9,24 +9,21 @@
 
     <p>Пользователь: <b>{{ user }}</b></p>
 
-    <form method="post" action="/bur">
-        <label>Участок:</label><br>
-        <input type="text" name="section" required><br><br>
+   <form method="post" action="/bur">
+    <input name="area" placeholder="Участок" required>
+    <input name="rig_number" placeholder="№ буровой" required>
 
-        <label>№ буровой:</label><br>
-        <input type="text" name="rig" required><br><br>
+    <input name="meters" type="number" step="0.01" placeholder="Метраж" required>
+    <input name="pogonometer" type="number" step="0.01" placeholder="Погонометр" required>
 
-        <label>Метраж:</label><br>
-        <input type="number" step="0.01" name="meters" required><br><br>
+    <input name="operation" placeholder="Вид операции" required>
+    <input name="responsible" placeholder="Ответственное лицо" required>
 
-        <label>Погонометр:</label><br>
-        <input type="number" step="0.01" name="pogon" required><br><br>
+    <textarea name="note" placeholder="Примечание"></textarea>
 
-        <label>Примечание:</label><br>
-        <textarea name="note"></textarea><br><br>
+    <button type="submit">Отправить</button>
+</form>
 
-        <button type="submit">Отправить</button>
-    </form>
 
     <br>
     <a href="/logout">Выйти</a>
