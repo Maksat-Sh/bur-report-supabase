@@ -106,37 +106,39 @@ def bur_page(request: Request):
         {"request": request, "user": request.session["user"]}
     )
 
-@app.post("/bur")
-def send_report(
+@router.post("/bur")
+def submit_report(
     request: Request,
     area: str = Form(...),
     rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometr: float = Form(...),   # ❗ ВАЖНО: pogonometr
+    pogonometr: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
-    note: str = Form("")
+    note: str = Form(""),
+    db: Session = Depends(get_db),
 ):
-    if request.session.get("role") != "bur":
+    user = request.session.get("user")
+    if not user:
         return RedirectResponse("/login", status_code=302)
 
-    cursor.execute("""
-        INSERT INTO reports (
-            created_at, bur, area, rig_number,
-            meters, pogonometr, operation, responsible, note
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        request.session["user"],
-        area,
-        rig_number,
-        meters,
-        pogonometr,
-        operation,
-        responsible,
-        note
-    ))
+    report = Report(
+        bur=user,
+        section=area,
+        bur_no=rig_number,
+        footage=meters,
+        pogonometr=pogonometr,
+        operation_type=operation,
+        person=responsible,
+        note=note,
+    )
+
+    db.add(report)
+    db.commit()          # ← ОБЯЗАТЕЛЬНО
+    db.refresh(report)
+
+    return RedirectResponse("/bur", status_code=302)
+
 
     conn.commit()
     return RedirectResponse("/bur", status_code=302)
