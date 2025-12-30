@@ -1,112 +1,65 @@
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request, Form, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-import sqlite3
+import psycopg2
+import os
 from datetime import datetime
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="SUPER_SECRET_KEY")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="SUPER_SECRET_KEY_123"
+)
 
 templates = Jinja2Templates(directory="templates")
 
-# ===================== БАЗА =====================
-conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
 )
-""")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT,
-    bur TEXT,
-    area TEXT,
-    rig_number TEXT,
-    meters REAL,
-    pogonometr REAL,
-    operation TEXT,
-    responsible TEXT,
-    note TEXT
-)
-""")
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
-conn.commit()
-
-# ===================== ПОЛЬЗОВАТЕЛИ =====================
-def init_users():
-    users = [
-        ("dispatcher", "123", "dispatcher"),
-        ("bur1", "123", "bur"),
-        ("bur2", "123", "bur"),
-    ]
-    for u in users:
-        try:
-            cursor.execute(
-                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)", u
-            )
-        except:
-            pass
-    conn.commit()
-
-init_users()
-
-# ===================== LOGIN =====================
-@app.get("/login")
+# ---------- AUTH ----------
+@app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-def login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
-):
-    cursor.execute(
-        "SELECT role FROM users WHERE username=? AND password=?",
-        (username, password)
-    )
-    user = cursor.fetchone()
-
-    if not user:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный логин или пароль"}
-        )
-
-    request.session["user"] = username
-    request.session["role"] = user[0]
-
-    if user[0] == "dispatcher":
+def login(username: str = Form(...), password: str = Form(...), request: Request = None):
+    if username == "dispatcher" and password == "1234":
+        request.session["user"] = "dispatcher"
         return RedirectResponse("/dispatcher", status_code=302)
-    else:
+
+    if username == "bur" and password == "1234":
+        request.session["user"] = "bur"
         return RedirectResponse("/bur", status_code=302)
 
-# ===================== LOGOUT =====================
+    return RedirectResponse("/login", status_code=302)
+
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# ===================== BUR =====================
-@app.get("/bur")
-def bur_page(request: Request):
-    if request.session.get("role") != "bur":
-        return RedirectResponse("/login", status_code=302)
+def require_user(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise Exception("Unauthorized")
+    return user
 
+# ---------- BUR ----------
+@app.get("/bur", response_class=HTMLResponse)
+def bur_page(request: Request, user=Depends(require_user)):
     return templates.TemplateResponse(
         "bur.html",
-        {"request": request, "user": request.session["user"]}
+        {"request": request, "user": user}
     )
 
-@router.post("/bur")
+@app.post("/bur")
 def submit_report(
     request: Request,
     area: str = Form(...),
@@ -115,44 +68,50 @@ def submit_report(
     pogonometr: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
+    note: str = Form("")
 ):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse("/login", status_code=302)
+    conn = get_db()
+    cur = conn.cursor()
 
-    report = Report(
-        bur=user,
-        section=area,
-        bur_no=rig_number,
-        footage=meters,
-        pogonometr=pogonometr,
-        operation_type=operation,
-        person=responsible,
-        note=note,
-    )
-
-    db.add(report)
-    db.commit()          # ← ОБЯЗАТЕЛЬНО
-    db.refresh(report)
-
-    return RedirectResponse("/bur", status_code=302)
-
+    cur.execute("""
+        INSERT INTO reports
+        (bur, section, bur_no, footage, pogonometr, operation_type, person, note, created_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (
+        "bur",
+        area,
+        rig_number,
+        meters,
+        pogonometr,
+        operation,
+        responsible,
+        note,
+        datetime.utcnow()
+    ))
 
     conn.commit()
+    cur.close()
+    conn.close()
+
     return RedirectResponse("/bur", status_code=302)
 
-# ===================== DISPATCHER =====================
-@app.get("/dispatcher")
-def dispatcher_page(request: Request):
-    if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login", status_code=302)
+# ---------- DISPATCHER ----------
+@app.get("/dispatcher", response_class=HTMLResponse)
+def dispatcher_page(request: Request, user=Depends(require_user)):
+    conn = get_db()
+    cur = conn.cursor()
 
-    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
-    reports = cursor.fetchall()
+    cur.execute("""
+        SELECT section, bur_no, footage, pogonometr, operation_type, person, note, created_at
+        FROM reports
+        ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
 
     return templates.TemplateResponse(
         "dispatcher.html",
-        {"request": request, "reports": reports}
+        {"request": request, "reports": rows}
     )
