@@ -6,11 +6,11 @@ import sqlite3
 from datetime import datetime
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="SUPER_SECRET_KEY_123")
+app.add_middleware(SessionMiddleware, secret_key="SECRET123")
 
 templates = Jinja2Templates(directory="templates")
 
-# -------------------- БАЗА --------------------
+# -------------------- DB --------------------
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS reports (
     area TEXT,
     rig_number TEXT,
     meters REAL,
-    pogonometr REAL,
+    pogonometer REAL,
     operation TEXT,
     responsible TEXT,
     note TEXT
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
 
 conn.commit()
 
-# -------------------- ПОЛЬЗОВАТЕЛИ --------------------
+# -------------------- USERS --------------------
 def init_users():
     users = [
         ("dispatcher", "123", "dispatcher"),
@@ -57,6 +57,11 @@ def init_users():
     conn.commit()
 
 init_users()
+
+# -------------------- ROOT --------------------
+@app.get("/")
+def root():
+    return RedirectResponse("/login")
 
 # -------------------- LOGIN --------------------
 @app.get("/login")
@@ -86,8 +91,7 @@ def login(
 
     if user[0] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
-    else:
-        return RedirectResponse("/bur", status_code=302)
+    return RedirectResponse("/bur", status_code=302)
 
 # -------------------- LOGOUT --------------------
 @app.get("/logout")
@@ -95,11 +99,11 @@ def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# -------------------- BUR FORM --------------------
+# -------------------- BUR --------------------
 @app.get("/bur")
 def bur_page(request: Request):
     if request.session.get("role") != "bur":
-        return RedirectResponse("/login", status_code=302)
+        return RedirectResponse("/login")
 
     return templates.TemplateResponse(
         "bur.html",
@@ -112,41 +116,41 @@ def send_report(
     area: str = Form(...),
     rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometer: float = Form(...),
+    pogonometer: float = Form(...),  # ← ИМЯ СОВПАДАЕТ С HTML
     operation: str = Form(...),
     responsible: str = Form(...),
     note: str = Form("")
 ):
     if request.session.get("role") != "bur":
-        return RedirectResponse("/login", status_code=302)
-
-    bur = request.session.get("user")
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        return RedirectResponse("/login")
 
     cursor.execute("""
-        INSERT INTO reports (
-            date, bur, area, rig_number,
-            meters, pogonometr, operation, responsible, note
-        )
+        INSERT INTO reports
+        (date, bur, area, rig_number, meters, pogonometer, operation, responsible, note)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        date, bur, area, rig_number,
-        meters, pogonometer, operation, responsible, note
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        request.session["user"],
+        area,
+        rig_number,
+        meters,
+        pogonometer,
+        operation,
+        responsible,
+        note
     ))
 
     conn.commit()
-
     return RedirectResponse("/bur", status_code=302)
 
 # -------------------- DISPATCHER --------------------
 @app.get("/dispatcher")
 def dispatcher_page(request: Request):
     if request.session.get("role") != "dispatcher":
-        return RedirectResponse("/login", status_code=302)
+        return RedirectResponse("/login")
 
     cursor.execute("""
-        SELECT id, date, bur, area, rig_number,
-               meters, pogonometr, operation, responsible, note
+        SELECT id, date, bur, area, rig_number, meters, pogonometer, operation, responsible, note
         FROM reports
         ORDER BY id DESC
     """)
@@ -156,3 +160,12 @@ def dispatcher_page(request: Request):
         "dispatcher.html",
         {"request": request, "reports": reports}
     )
+
+# -------------------- API --------------------
+@app.get("/reports")
+def api_reports(request: Request):
+    if request.session.get("role") != "dispatcher":
+        return {"detail": "Forbidden"}
+
+    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
+    return cursor.fetchall()
