@@ -6,11 +6,11 @@ import sqlite3
 from datetime import datetime
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="SECRET123")
+app.add_middleware(SessionMiddleware, secret_key="SUPER_SECRET_KEY")
 
 templates = Jinja2Templates(directory="templates")
 
-# -------------------- БАЗА --------------------
+# ===================== БАЗА =====================
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT,
+    created_at TEXT,
     bur TEXT,
     area TEXT,
     rig_number TEXT,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
 
 conn.commit()
 
-# -------------------- ПОЛЬЗОВАТЕЛИ --------------------
+# ===================== ПОЛЬЗОВАТЕЛИ =====================
 def init_users():
     users = [
         ("dispatcher", "123", "dispatcher"),
@@ -58,11 +58,7 @@ def init_users():
 
 init_users()
 
-# -------------------- LOGIN --------------------
-@app.get("/")
-def root():
-    return RedirectResponse("/login")
-
+# ===================== LOGIN =====================
 @app.get("/login")
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -93,13 +89,13 @@ def login(
     else:
         return RedirectResponse("/bur", status_code=302)
 
-# -------------------- LOGOUT --------------------
+# ===================== LOGOUT =====================
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# -------------------- BUR --------------------
+# ===================== BUR =====================
 @app.get("/bur")
 def bur_page(request: Request):
     if request.session.get("role") != "bur":
@@ -116,7 +112,7 @@ def send_report(
     area: str = Form(...),
     rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometr: float = Form(...),
+    pogonometr: float = Form(...),   # ❗ ВАЖНО: pogonometr
     operation: str = Form(...),
     responsible: str = Form(...),
     note: str = Form("")
@@ -124,22 +120,28 @@ def send_report(
     if request.session.get("role") != "bur":
         return RedirectResponse("/login", status_code=302)
 
-    bur = request.session["user"]
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-
     cursor.execute("""
-        INSERT INTO reports
-        (date, bur, area, rig_number, meters, pogonometr, operation, responsible, note)
+        INSERT INTO reports (
+            created_at, bur, area, rig_number,
+            meters, pogonometr, operation, responsible, note
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        date, bur, area, rig_number,
-        meters, pogonometr, operation, responsible, note
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        request.session["user"],
+        area,
+        rig_number,
+        meters,
+        pogonometr,
+        operation,
+        responsible,
+        note
     ))
 
     conn.commit()
     return RedirectResponse("/bur", status_code=302)
 
-# -------------------- DISPATCHER --------------------
+# ===================== DISPATCHER =====================
 @app.get("/dispatcher")
 def dispatcher_page(request: Request):
     if request.session.get("role") != "dispatcher":
