@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS reports (
     area TEXT,
     rig_number TEXT,
     meters REAL,
-    pogonometer REAL,
+    pogonometr REAL,
     operation TEXT,
     responsible TEXT,
     note TEXT
@@ -116,7 +116,7 @@ def send_report(
     area: str = Form(...),
     rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometer: float = Form(...),
+    pogonometr: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
     note: str = Form("")
@@ -129,11 +129,11 @@ def send_report(
 
     cursor.execute("""
         INSERT INTO reports
-        (date, bur, area, rig_number, meters, pogonometer, operation, responsible, note)
+        (date, bur, area, rig_number, meters, pogonometr, operation, responsible, note)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         date, bur, area, rig_number,
-        meters, pogonometer, operation, responsible, note
+        meters, pogonometr, operation, responsible, note
     ))
 
     conn.commit()
