@@ -1,16 +1,16 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 import sqlite3
 from datetime import datetime
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="SUPER_SECRET_KEY")
+app.add_middleware(SessionMiddleware, secret_key="SUPER_SECRET_KEY_123")
 
 templates = Jinja2Templates(directory="templates")
 
-# ================== DATABASE ==================
+# -------------------- БАЗА --------------------
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS reports (
     date TEXT,
     bur TEXT,
     area TEXT,
+    rig_number TEXT,
     meters REAL,
     pogonometr REAL,
     operation TEXT,
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
 
 conn.commit()
 
-# ================== INIT USERS ==================
+# -------------------- ПОЛЬЗОВАТЕЛИ --------------------
 def init_users():
     users = [
         ("dispatcher", "123", "dispatcher"),
@@ -57,7 +58,7 @@ def init_users():
 
 init_users()
 
-# ================== LOGIN ==================
+# -------------------- LOGIN --------------------
 @app.get("/login")
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -85,15 +86,16 @@ def login(
 
     if user[0] == "dispatcher":
         return RedirectResponse("/dispatcher", status_code=302)
-    return RedirectResponse("/bur", status_code=302)
+    else:
+        return RedirectResponse("/bur", status_code=302)
 
-# ================== LOGOUT ==================
+# -------------------- LOGOUT --------------------
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# ================== BUR ==================
+# -------------------- BUR FORM --------------------
 @app.get("/bur")
 def bur_page(request: Request):
     if request.session.get("role") != "bur":
@@ -110,7 +112,7 @@ def send_report(
     area: str = Form(...),
     rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometr: float = Form(...),
+    pogonometer: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
     note: str = Form("")
@@ -118,26 +120,33 @@ def send_report(
     if request.session.get("role") != "bur":
         return RedirectResponse("/login", status_code=302)
 
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
     bur = request.session.get("user")
+    date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     cursor.execute("""
-        INSERT INTO reports
-        (date, bur, area, meters, pogonometr, operation, responsible, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (date, bur, area, meters, pogonometr, operation, responsible, note))
+        INSERT INTO reports (
+            date, bur, area, rig_number,
+            meters, pogonometr, operation, responsible, note
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        date, bur, area, rig_number,
+        meters, pogonometer, operation, responsible, note
+    ))
 
     conn.commit()
+
     return RedirectResponse("/bur", status_code=302)
 
-# ================== DISPATCHER ==================
+# -------------------- DISPATCHER --------------------
 @app.get("/dispatcher")
 def dispatcher_page(request: Request):
     if request.session.get("role") != "dispatcher":
         return RedirectResponse("/login", status_code=302)
 
     cursor.execute("""
-        SELECT id, date, bur, area, meters, pogonometr, operation, responsible, note
+        SELECT id, date, bur, area, rig_number,
+               meters, pogonometr, operation, responsible, note
         FROM reports
         ORDER BY id DESC
     """)
@@ -147,17 +156,3 @@ def dispatcher_page(request: Request):
         "dispatcher.html",
         {"request": request, "reports": reports}
     )
-
-# ================== API ==================
-@app.get("/reports")
-def get_reports(request: Request):
-    if request.session.get("role") != "dispatcher":
-        return JSONResponse({"error": "forbidden"}, status_code=403)
-
-    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
-    return cursor.fetchall()
-
-@app.get("/db-check")
-def db_check():
-    cursor.execute("SELECT COUNT(*) FROM reports")
-    return {"reports_count": cursor.fetchone()[0]}
