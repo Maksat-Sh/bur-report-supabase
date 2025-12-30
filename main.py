@@ -29,8 +29,9 @@ CREATE TABLE IF NOT EXISTS reports (
     date TEXT,
     bur TEXT,
     area TEXT,
+    rig_number TEXT,
     meters REAL,
-    pogonometr REAL,
+    pogonometer REAL,
     operation TEXT,
     responsible TEXT,
     note TEXT
@@ -98,7 +99,7 @@ def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-# -------------------- BUR FORM --------------------
+# -------------------- BUR --------------------
 @app.get("/bur")
 def bur_page(request: Request):
     if request.session.get("role") != "bur":
@@ -113,8 +114,9 @@ def bur_page(request: Request):
 def send_report(
     request: Request,
     area: str = Form(...),
+    rig_number: str = Form(...),
     meters: float = Form(...),
-    pogonometr: float = Form(...),   # ← ВАЖНО
+    pogonometer: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
     note: str = Form("")
@@ -122,17 +124,19 @@ def send_report(
     if request.session.get("role") != "bur":
         return RedirectResponse("/login", status_code=302)
 
-    bur = request.session.get("user")
+    bur = request.session["user"]
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     cursor.execute("""
-        INSERT INTO reports 
-        (date, bur, area, meters, pogonometr, operation, responsible, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (date, bur, area, meters, pogonometr, operation, responsible, note))
+        INSERT INTO reports
+        (date, bur, area, rig_number, meters, pogonometer, operation, responsible, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        date, bur, area, rig_number,
+        meters, pogonometer, operation, responsible, note
+    ))
 
     conn.commit()
-
     return RedirectResponse("/bur", status_code=302)
 
 # -------------------- DISPATCHER --------------------
@@ -148,14 +152,3 @@ def dispatcher_page(request: Request):
         "dispatcher.html",
         {"request": request, "reports": reports}
     )
-
-# -------------------- API REPORTS --------------------
-@app.get("/reports")
-def get_reports(request: Request):
-    if request.session.get("role") != "dispatcher":
-        return {"detail": "Forbidden"}
-
-    cursor.execute("SELECT * FROM reports ORDER BY id DESC")
-    rows = cursor.fetchall()
-
-    return rows
