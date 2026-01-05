@@ -5,6 +5,6 @@ python-multipart
 asyncpg
 SQLAlchemy
 psycopg2-binary
-
+itsdangerous
 
 
