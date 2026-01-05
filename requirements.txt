@@ -1,12 +1,7 @@
 fastapi
 uvicorn
-sqlalchemy>=2.0
-asyncpg
-python-multipart
-jinja2
-python-dotenv
-itsdangerous
-openpyxl
 psycopg2-binary
-pandas
+jinja2
+python-multipart
+
 
