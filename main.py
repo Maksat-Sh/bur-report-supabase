@@ -6,6 +6,23 @@ import psycopg2
 import os
 from datetime import datetime
 
+import psycopg2
+import os
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+conn = psycopg2.connect(
+    DATABASE_URL,
+    sslmode="require"
+)
+
+cur = conn.cursor()
+cur.execute("select 1;")
+print("DB OK:", cur.fetchone())
+
+cur.close()
+conn.close()
+
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="SECRET_KEY_123")
 
