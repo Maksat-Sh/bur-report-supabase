@@ -1,41 +1,59 @@
 from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
-import psycopg2
+from fastapi.middleware.sessions import SessionMiddleware
+from sqlalchemy import create_engine, text
 import os
-from datetime import datetime
 
+# ================== НАСТРОЙКИ ==================
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://report_oag9_user:ptL2Iv17CqIkUJWLWmYmeVMqJhOVhXi7@dpg-d28s8iur433s73btijog-a/report_oag9"
+)
+
+engine = create_engine(DATABASE_URL)
 app = FastAPI()
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key="SUPER_SECRET_KEY_123"
+    secret_key="super-secret-key"
 )
 
 templates = Jinja2Templates(directory="templates")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
-)
+# ================== ВСПОМОГАТЕЛЬНОЕ ==================
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
+def get_user(request: Request):
+    return request.session.get("user")
 
-# ---------- AUTH ----------
+def auth_required(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
+
+# ================== ГЛАВНАЯ ==================
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return RedirectResponse("/login")
+
+# ================== LOGIN ==================
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-def login(username: str = Form(...), password: str = Form(...), request: Request = None):
-    if username == "dispatcher" and password == "1234":
-        request.session["user"] = "dispatcher"
-        return RedirectResponse("/dispatcher", status_code=302)
-
-    if username == "bur" and password == "1234":
-        request.session["user"] = "bur"
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    # ПРОСТОЙ ЛОГИН (как у тебя было)
+    if password == "1234":
+        request.session["user"] = username
+        if username == "dispatcher":
+            return RedirectResponse("/dispatcher", status_code=302)
         return RedirectResponse("/bur", status_code=302)
 
     return RedirectResponse("/login", status_code=302)
@@ -45,18 +63,16 @@ def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
-def require_user(request: Request):
-    user = request.session.get("user")
-    if not user:
-        raise Exception("Unauthorized")
-    return user
+# ================== БУРОВИК ==================
 
-# ---------- BUR ----------
 @app.get("/bur", response_class=HTMLResponse)
-def bur_page(request: Request, user=Depends(require_user)):
+def bur_page(request: Request):
+    if not get_user(request):
+        return RedirectResponse("/login", status_code=302)
+
     return templates.TemplateResponse(
         "bur.html",
-        {"request": request, "user": user}
+        {"request": request, "user": request.session["user"]}
     )
 
 @app.post("/bur")
@@ -68,50 +84,46 @@ def submit_report(
     pogonometr: float = Form(...),
     operation: str = Form(...),
     responsible: str = Form(...),
-    note: str = Form("")
+    note: str = Form(None)
 ):
-    conn = get_db()
-    cur = conn.cursor()
+    if not get_user(request):
+        return RedirectResponse("/login", status_code=302)
 
-    cur.execute("""
-        INSERT INTO reports
-        (bur, section, bur_no, footage, pogonometr, operation_type, person, note, created_at)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """, (
-        "bur",
-        area,
-        rig_number,
-        meters,
-        pogonometr,
-        operation,
-        responsible,
-        note,
-        datetime.utcnow()
-    ))
-
-    conn.commit()
-    cur.close()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO reports
+                (bur, section, bur_no, footage, pogonometr, operation_type, person, note)
+                VALUES
+                (:bur, :section, :bur_no, :footage, :pogonometr, :operation, :person, :note)
+            """),
+            {
+                "bur": request.session["user"],
+                "section": area,
+                "bur_no": rig_number,
+                "footage": meters,
+                "pogonometr": pogonometr,
+                "operation": operation,
+                "person": responsible,
+                "note": note
+            }
+        )
 
     return RedirectResponse("/bur", status_code=302)
 
-# ---------- DISPATCHER ----------
+# ================== ДИСПЕТЧЕР ==================
+
 @app.get("/dispatcher", response_class=HTMLResponse)
-def dispatcher_page(request: Request, user=Depends(require_user)):
-    conn = get_db()
-    cur = conn.cursor()
+def dispatcher(request: Request):
+    if get_user(request) != "dispatcher":
+        return RedirectResponse("/login", status_code=302)
 
-    cur.execute("""
-        SELECT section, bur_no, footage, pogonometr, operation_type, person, note, created_at
-        FROM reports
-        ORDER BY created_at DESC
-    """)
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
+    with engine.connect() as conn:
+        reports = conn.execute(
+            text("SELECT * FROM reports ORDER BY created_at DESC")
+        ).mappings().all()
 
     return templates.TemplateResponse(
         "dispatcher.html",
-        {"request": request, "reports": rows}
+        {"request": request, "reports": reports}
     )
